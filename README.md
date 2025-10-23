@@ -105,14 +105,19 @@ with open('audio.wav', 'wb') as f:
 
 ### Lancer l'Interface Web Ultra Pro
 
+**Windows :**
+Double-cliquez sur :
+```
+start_ultra_pro.bat
+```
+Ou depuis le dossier scripts :
+```
+scripts\launch_ui.bat
+```
+
 **Linux/Mac :**
 ```bash
 ./start_ultra_pro.sh
-```
-
-**Windows :**
-```bash
-python src\webui_ultra_pro.py
 ```
 
 L'interface sera disponible sur : `http://localhost:7860`

@@ -1,36 +1,16 @@
 @echo off
 chcp 65001 > nul
-title TTS Voice Cloning UI
+title TTS Ultra Pro
 
 echo.
 echo =====================================
-echo   TTS Voice Cloning - Interface Web
+echo   TTS Ultra Pro - Interface Web
 echo =====================================
 echo.
-echo Quelle interface souhaitez-vous lancer ?
+echo Lancement de l'interface Ultra Pro...
 echo.
-echo   1. Interface Basique (webui.py)
-echo   2. Interface Pro - Paramètres avancés (webui2.py)
-echo   3. Interface Ultra Pro - Dialogues multi-voix (webui3.py)
-echo.
-set /p "choice=Votre choix (1-3, défaut=3) : "
 
-if "%choice%"=="" set choice=3
-if "%choice%"=="1" set "script=webui.py"
-if "%choice%"=="2" set "script=webui2.py"
-if "%choice%"=="3" set "script=webui3.py"
-
-if not defined script (
-    echo [ERREUR] Choix invalide
-    pause
-    exit /b 1
-)
-
-echo.
-echo ================================
-echo   Lancement de %script%
-echo ================================
-echo.
+set "script=webui_ultra_pro.py"
 
 REM Obtenir le répertoire du projet (dossier parent de scripts/)
 set "PROJECT_DIR=%~dp0.."

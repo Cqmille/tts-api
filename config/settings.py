@@ -49,7 +49,15 @@ FLASK_CONFIG = {
 # Configuration Gradio
 GRADIO_CONFIG = {
     "share": False,
-    "server_port": GRADIO_PORT
+    "server_port": GRADIO_PORT,
+    "max_threads": 10
+}
+
+# Configuration alternative si le port est occupé
+GRADIO_CONFIG_AUTO_PORT = {
+    "share": False,
+    "max_threads": 10
+    # On ne spécifie pas server_port pour que Gradio trouve automatiquement un port libre
 }
 
 # Paramètres de génération de fichiers

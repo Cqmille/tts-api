@@ -316,4 +316,12 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
 
 if __name__ == "__main__":
     print("🚀 Lancement de TTS Ultra Pro...")
-    demo.launch(**GRADIO_CONFIG)
+    try:
+        demo.launch(**GRADIO_CONFIG)
+    except OSError as e:
+        if "Cannot find empty port" in str(e):
+            print(f"⚠️  Port {GRADIO_CONFIG.get('server_port', 7860)} occupé, recherche d'un port disponible...")
+            from config.settings import GRADIO_CONFIG_AUTO_PORT
+            demo.launch(**GRADIO_CONFIG_AUTO_PORT)
+        else:
+            raise

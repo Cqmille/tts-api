@@ -1,15 +1,23 @@
 import gradio as gr
 import torch
 from TTS.api import TTS
+import os
+import sys
+
+# Ajouter le dossier parent au path pour importer config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from config.settings import *
 
 # Initialiser le modèle XTTS v2
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"🖥️ Utilisation du device: {device}")
 print("Chargement du modèle XTTS v2...")
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
+tts = TTS(TTS_CONFIG["model"]).to(device)
 
 def generate_speech(text, speaker_wav, language):
     """Génère la voix clonée"""
     try:
-        output_path = "C:/tts/gradio_output.wav"
+        output_path = get_output_path("gradio_output.wav")
         tts.tts_to_file(
             text=text,
             speaker_wav=speaker_wav,
@@ -37,8 +45,8 @@ with gr.Blocks(title="TTS Voice Cloning") as demo:
                 type="filepath"
             )
             language_input = gr.Dropdown(
-                choices=["fr", "en", "es", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko"],
-                value="fr",
+                choices=SUPPORTED_LANGUAGES,
+                value=TTS_CONFIG["default_language"],
                 label="Langue"
             )
             generate_btn = gr.Button("🎵 Générer", variant="primary")
@@ -55,4 +63,4 @@ with gr.Blocks(title="TTS Voice Cloning") as demo:
     gr.Markdown("### Astuce : Pour de meilleurs résultats, utilisez un échantillon vocal clair de 6 secondes minimum.")
 
 print("Lancement de l'interface...")
-demo.launch(share=False, server_port=7860)
+demo.launch(**GRADIO_CONFIG)

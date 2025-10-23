@@ -1,5 +1,48 @@
-__pycache__/ 
-*.pyc 
-*.wav 
-.env 
-venv/ 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environnements virtuels
+venv/
+env/
+ENV/
+
+# Variables d'environnement
+.env
+.env.local
+
+# Fichiers audio générés
+*.wav
+*.mp3
+*.ogg
+
+# Dossiers de données
+data/outputs/*
+data/temp/*
+data/voices/*
+
+# Garder les dossiers mais pas leur contenu
+!data/outputs/.gitkeep
+!data/temp/.gitkeep
+!data/voices/.gitkeep
+!data/voices/README.md
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Modèles TTS (téléchargés automatiquement)
+models/

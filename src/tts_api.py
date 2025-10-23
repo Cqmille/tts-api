@@ -3,21 +3,19 @@ from flask_cors import CORS
 import torch
 from TTS.api import TTS
 import os
-import io
+import sys
+
+# Ajouter le dossier parent au path pour importer config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from config.settings import *
 
 app = Flask(__name__)
 CORS(app)  # Important pour Unity
 
-# Initialisation (comme dans ton webui)
+# Initialisation
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"🖥️ Utilisation du device: {device}")
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-
-# Chemins vers tes samples
-VOICE_SAMPLES = {
-    "bob": "C:/tts/bob.wav",      # Ton sample Bob
-    "pascal": "C:/tts/pp1.wav"  # Ton sample Pascal
-}
+tts = TTS(TTS_CONFIG["model"]).to(device)
 
 @app.route('/api/tts', methods=['POST'])
 def generate_speech():
@@ -29,20 +27,20 @@ def generate_speech():
         if not text:
             return {"error": "No text provided"}, 400
         
-        speaker_wav = VOICE_SAMPLES.get(speaker.lower())
+        speaker_wav = get_voice_sample_path(speaker)
         if not speaker_wav:
             return {"error": f"Unknown speaker: {speaker}"}, 400
-        
+
         # Génération temporaire
-        temp_path = f"C:/tts/temp_{speaker}.wav"
-        
+        temp_path = get_temp_path(f"temp_{speaker}.wav")
+
         tts.tts_to_file(
             text=text,
             speaker_wav=speaker_wav,
-            language="fr",
+            language=TTS_CONFIG["default_language"],
             file_path=temp_path,
-            temperature=0.75,
-            speed=1.0
+            temperature=TTS_CONFIG["default_temperature"],
+            speed=TTS_CONFIG["default_speed"]
         )
         
         # Envoyer le fichier
@@ -57,5 +55,5 @@ def health():
     return {"status": "ok", "device": device}
 
 if __name__ == '__main__':
-    print("🚀 API TTS lancée sur http://localhost:5002")
-    app.run(host='0.0.0.0', port=5002, debug=False)
+    print(f"🚀 API TTS lancée sur http://localhost:{FLASK_CONFIG['port']}")
+    app.run(**FLASK_CONFIG)

@@ -3,9 +3,14 @@ import torch
 from TTS.api import TTS
 import os
 import re
+import sys
 from datetime import datetime
 import zipfile
 import shutil
+
+# Ajouter le dossier parent au path pour importer config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from config.settings import *
 
 # Vérifier si CUDA est disponible
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -13,12 +18,11 @@ print(f"🖥️ Utilisation du device: {device}")
 
 # Initialiser le modèle XTTS v2 sur GPU
 print("Chargement du modèle XTTS v2...")
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+tts = TTS(TTS_CONFIG["model"]).to(device)
 
 # Stockage global des parties du dialogue
 dialogue_parts = []
-temp_audio_dir = "C:/tts/temp_dialogue"
-os.makedirs(temp_audio_dir, exist_ok=True)
+temp_audio_dir = str(TEMP_DIALOGUE_DIR)
 
 def sanitize_filename(text, max_length=50):
     """Crée un nom de fichier valide à partir du texte"""
@@ -128,18 +132,18 @@ def clear_dialogue():
 def export_dialogue(output_dir):
     """Exporte tout le dialogue en ZIP"""
     global dialogue_parts
-    
+
     try:
         if not dialogue_parts:
             return "❌ Aucune partie à exporter", None
-        
+
         if not output_dir or output_dir.strip() == "":
-            output_dir = "C:/tts/outputs"
-        
+            output_dir = str(OUTPUTS_DIR)
+
         os.makedirs(output_dir, exist_ok=True)
-        
+
         # Créer le nom du ZIP
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime(FILE_CONFIG["timestamp_format"])
         zip_filename = f"dialogue_{timestamp}.zip"
         zip_path = os.path.join(output_dir, zip_filename)
         
@@ -210,17 +214,17 @@ with gr.Blocks(title="TTS Dialogue Studio Ultra Pro", theme=gr.themes.Soft()) as
             
             with gr.Row():
                 language_input = gr.Dropdown(
-                    choices=["fr", "en", "es", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko"],
-                    value="fr",
+                    choices=SUPPORTED_LANGUAGES,
+                    value=TTS_CONFIG["default_language"],
                     label="🌍 Langue",
                     scale=1
                 )
                 temperature = gr.Slider(
-                    minimum=0.1, maximum=1.0, value=0.75, step=0.05,
+                    minimum=0.1, maximum=1.0, value=TTS_CONFIG["default_temperature"], step=0.05,
                     label="🔥 Temperature", scale=1
                 )
                 speed = gr.Slider(
-                    minimum=0.5, maximum=2.0, value=1.0, step=0.1,
+                    minimum=0.5, maximum=2.0, value=TTS_CONFIG["default_speed"], step=0.1,
                     label="⚡ Vitesse", scale=1
                 )
             
@@ -251,8 +255,8 @@ with gr.Blocks(title="TTS Dialogue Studio Ultra Pro", theme=gr.themes.Soft()) as
             
             output_dir_input = gr.Textbox(
                 label="📂 Dossier de sortie",
-                value="C:/tts/outputs",
-                placeholder="C:/tts/outputs"
+                value=str(OUTPUTS_DIR),
+                placeholder=str(OUTPUTS_DIR)
             )
             
             with gr.Row():
@@ -314,4 +318,4 @@ with gr.Blocks(title="TTS Dialogue Studio Ultra Pro", theme=gr.themes.Soft()) as
     )
 
 print("🚀 Lancement du Dialogue Studio Ultra Pro...")
-demo.launch(share=False, server_port=7860)
+demo.launch(**GRADIO_CONFIG)

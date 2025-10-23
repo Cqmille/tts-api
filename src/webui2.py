@@ -3,7 +3,12 @@ import torch
 from TTS.api import TTS
 import os
 import re
+import sys
 from datetime import datetime
+
+# Ajouter le dossier parent au path pour importer config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from config.settings import *
 
 # Vérifier si CUDA est disponible
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -11,7 +16,7 @@ print(f"🖥️ Utilisation du device: {device}")
 
 # Initialiser le modèle XTTS v2 sur GPU
 print("Chargement du modèle XTTS v2...")
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+tts = TTS(TTS_CONFIG["model"]).to(device)
 
 def sanitize_filename(text, max_length=50):
     """Crée un nom de fichier valide à partir du texte"""
@@ -31,11 +36,11 @@ def generate_speech(text, speaker_wav, language, temperature, speed, output_dir)
     try:
         # Utiliser le répertoire par défaut si vide
         if not output_dir or output_dir.strip() == "":
-            output_dir = "C:/tts/outputs"
-        
+            output_dir = str(OUTPUTS_DIR)
+
         # Créer le nom de fichier basé sur le texte
         base_name = sanitize_filename(text)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime(FILE_CONFIG["timestamp_format"])
         filename = f"{base_name}_{timestamp}.wav"
         output_path = os.path.join(output_dir, filename)
         
@@ -74,33 +79,33 @@ with gr.Blocks(title="TTS Voice Cloning Pro", theme=gr.themes.Soft()) as demo:
                 type="filepath"
             )
             language_input = gr.Dropdown(
-                choices=["fr", "en", "es", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko"],
-                value="fr",
+                choices=SUPPORTED_LANGUAGES,
+                value=TTS_CONFIG["default_language"],
                 label="🌍 Langue"
             )
-            
+
             output_dir_input = gr.Textbox(
                 label="📂 Dossier de sortie",
-                placeholder="C:/tts/outputs",
-                value="C:/tts/outputs",
+                placeholder=str(OUTPUTS_DIR),
+                value=str(OUTPUTS_DIR),
                 info="Laissez vide pour utiliser le dossier par défaut"
             )
-            
+
             gr.Markdown("### 🎚️ Paramètres avancés")
-            
+
             temperature = gr.Slider(
                 minimum=0.1,
                 maximum=1.0,
-                value=0.75,
+                value=TTS_CONFIG["default_temperature"],
                 step=0.05,
                 label="🔥 Temperature (expressivité)",
                 info="Plus haut = plus varié et expressif, plus bas = plus stable"
             )
-            
+
             speed = gr.Slider(
                 minimum=0.5,
                 maximum=2.0,
-                value=1.0,
+                value=TTS_CONFIG["default_speed"],
                 step=0.1,
                 label="⚡ Vitesse",
                 info="0.5 = lent, 1.0 = normal, 2.0 = rapide"
@@ -133,11 +138,11 @@ with gr.Blocks(title="TTS Voice Cloning Pro", theme=gr.themes.Soft()) as demo:
             - 📢 **Style pub** : Temperature 0.65, Speed 1.1
             
             **Exemples de chemins :**
-            - `C:/tts/outputs`
+            - `{OUTPUTS_DIR}`
             - `D:/mes_audios`
-            - `C:/Users/camil/Desktop/voix`
+            - Tout dossier personnalisé
             """)
-    
+
     generate_btn.click(
         fn=generate_speech,
         inputs=[text_input, audio_input, language_input, temperature, speed, output_dir_input],
@@ -145,4 +150,4 @@ with gr.Blocks(title="TTS Voice Cloning Pro", theme=gr.themes.Soft()) as demo:
     )
 
 print("🚀 Lancement de l'interface avancée...")
-demo.launch(share=False, server_port=7860)
+demo.launch(**GRADIO_CONFIG)

@@ -1,0 +1,73 @@
+@echo off
+chcp 65001 > nul
+title TTS API Server
+
+echo.
+echo ================================
+echo   TTS API Server - Démarrage
+echo ================================
+echo.
+
+REM Obtenir le répertoire du projet (dossier parent de scripts/)
+set "PROJECT_DIR=%~dp0.."
+cd /d "%PROJECT_DIR%"
+
+echo [INFO] Répertoire du projet : %CD%
+echo.
+
+REM Chercher Python dans l'ordre : venv local, conda, système
+echo [ETAPE 1/3] Recherche de Python...
+
+REM 1. Essayer l'environnement virtuel local
+if exist "venv\Scripts\python.exe" (
+    echo [OK] Environnement virtuel détecté
+    call venv\Scripts\activate.bat
+    goto :python_found
+)
+
+REM 2. Essayer Conda
+where conda >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [OK] Conda détecté, activation de l'environnement "tts"
+    call conda activate tts 2>nul
+    if %errorlevel% equ 0 goto :python_found
+)
+
+REM 3. Essayer Python système
+where python >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [OK] Python système détecté
+    goto :python_found
+)
+
+echo [ERREUR] Python introuvable. Veuillez lancer setup.bat d'abord.
+pause
+exit /b 1
+
+:python_found
+echo.
+echo [ETAPE 2/3] Vérification de l'installation...
+python --version
+
+REM Vérifier si les dépendances sont installées
+python -c "import flask, TTS" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [ATTENTION] Dépendances manquantes. Lancez setup.bat pour installer.
+    echo             Tentative de lancement quand même...
+)
+
+echo.
+echo [ETAPE 3/3] Démarrage de l'API TTS...
+echo.
+echo ================================
+echo   API en cours d'exécution
+echo   URL: http://localhost:5002
+echo   Arrêt: Ctrl+C
+echo ================================
+echo.
+
+python src\tts_api.py
+
+echo.
+echo [INFO] API arrêtée
+pause

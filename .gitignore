@@ -46,3 +46,11 @@ desktop.ini
 
 # Modèles TTS (téléchargés automatiquement)
 models/
+
+# Ignorer tout dans data/voices/
+data/voices/*
+
+# Sauf ces fichiers
+!data/voices/.gitkeep
+!data/voices/README.md
+!data/voices/pasqual.wav

@@ -1,0 +1,5 @@
+data/voices/*
+
+!data/voices/.gitkeep
+!data/voices/README.md
+!data/voices/pasqual.wav

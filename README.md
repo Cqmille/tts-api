@@ -10,23 +10,18 @@ API REST et interfaces web Gradio pour le clonage de voix en temps réel, basée
 - Compatible avec Unity et autres clients HTTP
 - Health check endpoint `/health`
 
-### 🎨 Interfaces Web (Gradio)
+### 🎨 Interface Web Ultra Pro (Gradio)
 
-**1. Interface Basique (`webui.py`)**
-- Clonage de voix simple
-- Support de 16 langues
-- Idéal pour tester rapidement
-
-**2. Interface Pro (`webui2.py`)**
-- Contrôle avancé : température, vitesse
-- Noms de fichiers automatiques avec timestamp
-- Dossier de sortie personnalisable
-
-**3. Interface Ultra Pro (`webui3.py`)**
-- Création de dialogues multi-voix
-- Support jusqu'à 4 voix simultanément
-- Export en ZIP pour montage vidéo
-- Prévisualisation en temps réel
+**Architecture Modulaire & Professionnelle**
+- 🎙️ **Génération de samples TTS** avec contrôle précis
+- 🎭 **Support de 4 voix simultanément** avec mémorisation des paramètres
+- 🔥 **Génération en rafale** (plusieurs samples d'un coup)
+- 📊 **Système de logs en temps réel** pour suivre toutes les opérations
+- 🗑️ **Suppression individuelle** avec réordonnancement automatique
+- 🔊 **Jusqu'à 20 samples** par session (extensible)
+- 💾 **Export ZIP** pour montage vidéo
+- 🎚️ **Mémorisation température/vitesse** par voix
+- 📝 **Interface compacte** avec hauteur réduite des lecteurs
 
 ## 📋 Prérequis
 
@@ -108,45 +103,57 @@ with open('audio.wav', 'wb') as f:
     f.write(response.content)
 ```
 
-### Lancer l'Interface Web
+### Lancer l'Interface Web Ultra Pro
 
-Double-cliquez sur :
-```
-scripts\launch_ui.bat
+**Linux/Mac :**
+```bash
+./start_ultra_pro.sh
 ```
 
-Choisissez l'interface que vous souhaitez utiliser :
-1. **Basique** - Simple et rapide
-2. **Pro** - Contrôle avancé
-3. **Ultra Pro** - Dialogues multi-voix
+**Windows :**
+```bash
+python src\webui_ultra_pro.py
+```
 
 L'interface sera disponible sur : `http://localhost:7860`
+
+**Fonctionnalités clés :**
+- Génération de samples individuels ou en rafale
+- Gestion dynamique jusqu'à 20 samples
+- Suppression individuelle avec boutons dédiés
+- Logs en temps réel des opérations
+- Export ZIP de tous les samples
 
 ## 📁 Structure du Projet
 
 ```
 tts-api/
-├── 📁 src/                  Code source
-│   ├── tts_api.py          API Flask
-│   ├── webui.py            Interface basique
-│   ├── webui2.py           Interface Pro
-│   └── webui3.py           Interface Ultra Pro
+├── 📁 src/                      Code source
+│   ├── webui_ultra_pro.py      Interface Ultra Pro (principale)
+│   ├── tts_api.py              API Flask
+│   └── 📁 modules/              Modules refactorisés
+│       ├── audio_manager.py    Gestion TTS et audio
+│       ├── sample_manager.py   Gestion des samples
+│       ├── ui_components.py    Composants UI
+│       └── utils.py            Fonctions utilitaires
 │
-├── 📁 config/               Configuration
-│   └── settings.py         Paramètres centralisés
+├── 📁 config/                   Configuration
+│   └── settings.py             Paramètres centralisés
 │
-├── 📁 data/                 Données
-│   ├── voices/             Échantillons de voix
-│   ├── outputs/            Fichiers générés
-│   └── temp/               Fichiers temporaires
+├── 📁 data/                     Données
+│   ├── voices/                 Échantillons de voix
+│   ├── outputs/                Fichiers générés
+│   └── temp/                   Fichiers temporaires
+│       └── dialogue/           Samples en cours
 │
-├── 📁 scripts/              Scripts de lancement
-│   ├── launch_api.bat      Lancer l'API
-│   └── launch_ui.bat       Lancer l'interface
+├── 📁 scripts/                  Scripts de lancement
+│   ├── launch_api.bat          Lancer l'API
+│   └── launch_ui.bat           Lancer l'interface
 │
-├── setup.bat               Installation automatique
-├── requirements.txt        Dépendances Python
-└── README.md              Ce fichier
+├── start_ultra_pro.sh          Script Linux/Mac
+├── setup.bat                   Installation automatique
+├── requirements.txt            Dépendances Python
+└── README.md                   Ce fichier
 ```
 
 ## ⚙️ Configuration

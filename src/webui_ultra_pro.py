@@ -238,31 +238,7 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
             gr.Markdown("## 🔊 Samples Générés")
             sample_list_display = gr.HTML(value=get_sample_display_html())
 
-            gr.Markdown("### 🎵 Lecteurs Audio")
-            gr.Markdown("*Lecteurs audio pour écouter et gérer vos samples*")
-
-            # Create 20 audio players with delete buttons
-            audio_players = []
-            delete_buttons = []
-
-            for i in range(20):
-                with gr.Row(elem_classes=["compact-row"]):
-                    with gr.Column(scale=5):
-                        audio = gr.Audio(
-                            label=f"Sample {i+1}",
-                            interactive=False,
-                            elem_classes=["compact-audio"]
-                        )
-                        audio_players.append(audio)
-                    with gr.Column(scale=1, min_width=80):
-                        delete_btn = gr.Button(
-                            f"🗑️ #{i+1}",
-                            variant="secondary",
-                            size="sm"
-                        )
-                        delete_buttons.append(delete_btn)
-
-            # Export section
+            # Export section (moved to top)
             gr.Markdown("### 📦 Export")
             with gr.Row():
                 export_btn = gr.Button("💾 Télécharger ZIP", variant="primary", size="lg")
@@ -270,6 +246,31 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
 
             status_export = gr.Textbox(label="Statut Export", interactive=False, lines=2)
             download_file = gr.File(label="📥 Fichier ZIP")
+
+            # Audio players in accordion (closed by default)
+            with gr.Accordion("🎵 Lecteurs Audio", open=False):
+                gr.Markdown("*Lecteurs audio pour écouter et gérer vos samples*")
+
+                # Create 20 audio players with delete buttons
+                audio_players = []
+                delete_buttons = []
+
+                for i in range(20):
+                    with gr.Row(elem_classes=["compact-row"]):
+                        with gr.Column(scale=5):
+                            audio = gr.Audio(
+                                label=f"Sample {i+1}",
+                                interactive=False,
+                                elem_classes=["compact-audio"]
+                            )
+                            audio_players.append(audio)
+                        with gr.Column(scale=1, min_width=40):
+                            delete_btn = gr.Button(
+                                "🗑️",
+                                variant="secondary",
+                                size="sm"
+                            )
+                            delete_buttons.append(delete_btn)
 
     # Help modal
     with gr.Accordion("💡 Guide d'utilisation", open=False) as help_accordion:

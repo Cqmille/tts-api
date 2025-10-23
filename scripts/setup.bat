@@ -14,8 +14,8 @@ echo   - Toutes les dépendances
 echo.
 pause
 
-REM Obtenir le répertoire du projet
-set "PROJECT_DIR=%~dp0"
+REM Obtenir le répertoire du projet (dossier parent de scripts/)
+set "PROJECT_DIR=%~dp0.."
 cd /d "%PROJECT_DIR%"
 
 echo.
@@ -131,10 +131,10 @@ echo   Prochaines étapes :
 echo ========================================
 echo.
 echo   Pour lancer l'API :
-echo     - Double-cliquez sur : scripts\launch_api.bat
+echo     - Double-cliquez sur : launch_api.bat
 echo.
 echo   Pour lancer l'interface web :
-echo     - Double-cliquez sur : scripts\launch_ui.bat
+echo     - Double-cliquez sur : launch_ui.bat
 echo.
 echo   Consultez le README.md pour plus d'informations
 echo.

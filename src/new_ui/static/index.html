@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS Timeline Studio</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <h1>TTS Timeline Studio</h1>
+        <div class="status">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Chargement...</span>
+        </div>
+    </header>
+
+    <!-- Generation Panel -->
+    <section class="generation-panel">
+        <div class="gen-row">
+            <div class="gen-group text-input">
+                <label>Texte</label>
+                <input type="text" id="textInput" placeholder="Entrez le texte à générer..." autofocus>
+            </div>
+            <div class="gen-group">
+                <label>Voix</label>
+                <select id="voiceSelect"></select>
+            </div>
+            <div class="gen-group">
+                <label>Langue</label>
+                <select id="languageSelect"></select>
+            </div>
+            <div class="gen-group">
+                <label>Temp</label>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <input type="range" id="tempSlider" min="0.1" max="1" step="0.05" value="0.75">
+                    <span class="range-value" id="tempValue">0.75</span>
+                </div>
+            </div>
+            <div class="gen-group">
+                <label>Vitesse</label>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <input type="range" id="speedSlider" min="0.5" max="2" step="0.1" value="1">
+                    <span class="range-value" id="speedValue">1.0</span>
+                </div>
+            </div>
+            <button class="btn" id="generateBtn">
+                <span>Générer</span>
+            </button>
+        </div>
+
+        <!-- Voice Bar -->
+        <div class="voice-bar">
+            <span class="voice-bar-label">Voix :</span>
+            <div class="voice-chips" id="voiceChips"></div>
+            <button class="upload-voice-btn" id="uploadVoiceBtn">+ Ajouter</button>
+        </div>
+    </section>
+
+    <!-- Timeline Header -->
+    <section class="timeline-header">
+        <div class="timeline-controls">
+            <button class="btn" id="playBtn" title="Lecture">
+                <span id="playIcon">▶</span>
+            </button>
+            <button class="btn btn-secondary" id="stopBtn" title="Stop">⏹</button>
+        </div>
+        <div class="timeline-info">
+            <span>Durée: <strong id="totalDuration">0.0s</strong></span>
+            <span>Samples: <strong id="sampleCount">0</strong></span>
+            <span>
+                Zoom:
+                <input type="range" id="zoomSlider" min="20" max="200" value="100" style="width: 80px; vertical-align: middle;">
+            </span>
+        </div>
+        <div class="timeline-controls">
+            <button class="btn btn-secondary btn-small" id="exportWavBtn">Export WAV</button>
+            <button class="btn btn-secondary btn-small" id="exportZipBtn">Export ZIP</button>
+            <button class="btn btn-secondary btn-small" id="exportEdlBtn">Export EDL</button>
+        </div>
+    </section>
+
+    <!-- Timeline -->
+    <section class="timeline-container">
+        <div class="timeline" id="timeline">
+            <!-- Time Ruler -->
+            <div class="time-ruler">
+                <div class="time-ruler-label"></div>
+                <div class="time-ruler-ticks" id="timeRuler"></div>
+            </div>
+
+            <!-- Tracks will be inserted here -->
+            <div id="tracksContainer"></div>
+
+            <!-- Empty State -->
+            <div class="empty-timeline" id="emptyState">
+                <div class="empty-timeline-icon">🎙️</div>
+                <h3>Timeline vide</h3>
+                <p>Générez votre premier sample pour commencer</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Context Menu -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" data-action="play">▶ Lire</div>
+        <div class="context-menu-item" data-action="regenerate">🔄 Régénérer</div>
+        <div class="context-menu-divider"></div>
+        <div class="volume-control">
+            <span>🔊</span>
+            <input type="range" id="volumeSlider" min="0" max="2" step="0.1" value="1">
+            <span id="volumeValue">100%</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item danger" data-action="delete">🗑️ Supprimer</div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div class="modal-overlay" id="uploadModal">
+        <div class="modal">
+            <h2>Ajouter une voix</h2>
+            <div class="gen-group" style="margin-bottom: 12px;">
+                <label>Nom de la voix</label>
+                <input type="text" id="voiceNameInput" placeholder="ex: marie">
+            </div>
+            <div class="gen-group">
+                <label>Fichier WAV</label>
+                <input type="file" id="voiceFileInput" accept=".wav">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="cancelUploadBtn">Annuler</button>
+                <button class="btn" id="confirmUploadBtn">Ajouter</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text" id="loadingText">Génération en cours...</div>
+    </div>
+
+    <!-- Audio element for playback -->
+    <audio id="audioPlayer" style="display: none;"></audio>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

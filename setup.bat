@@ -8,9 +8,11 @@ echo   TTS API - Installation Automatique
 echo ========================================
 echo.
 echo Ce script va installer automatiquement :
-echo   - Python (si nécessaire)
-echo   - Environnement virtuel
+echo   - Environnement virtuel (Python 3.10)
 echo   - Toutes les dépendances
+echo.
+echo IMPORTANT: TTS (Coqui) nécessite Python 3.10 ou 3.11
+echo            Python 3.12+ n'est PAS supporté !
 echo.
 pause
 
@@ -23,28 +25,74 @@ echo [INFO] Répertoire du projet : %CD%
 echo.
 
 REM ================================
-REM ETAPE 1 : Vérifier Python
+REM ETAPE 1 : Trouver Python 3.10/3.11
 REM ================================
-echo [ETAPE 1/5] Vérification de Python...
+echo [ETAPE 1/5] Recherche de Python 3.10 ou 3.11...
 
-where python >nul 2>&1
+REM Chercher Python 3.10 dans les emplacements courants
+set "PYTHON_EXE="
+
+REM Essayer py launcher d'abord (méthode recommandée)
+where py >nul 2>&1
 if %errorlevel% equ 0 (
-    echo [OK] Python est installé
-    python --version
-    goto :python_ok
+    REM Vérifier si Python 3.10 est disponible
+    py -3.10 --version >nul 2>&1
+    if %errorlevel% equ 0 (
+        set "PYTHON_EXE=py -3.10"
+        echo [OK] Python 3.10 trouvé via py launcher
+        goto :python_found
+    )
+    REM Vérifier si Python 3.11 est disponible
+    py -3.11 --version >nul 2>&1
+    if %errorlevel% equ 0 (
+        set "PYTHON_EXE=py -3.11"
+        echo [OK] Python 3.11 trouvé via py launcher
+        goto :python_found
+    )
 )
 
-echo [ATTENTION] Python n'est pas installé
+REM Chercher dans les chemins standards
+if exist "C:\Python310\python.exe" (
+    set "PYTHON_EXE=C:\Python310\python.exe"
+    echo [OK] Python 3.10 trouvé: C:\Python310
+    goto :python_found
+)
+
+if exist "C:\Python311\python.exe" (
+    set "PYTHON_EXE=C:\Python311\python.exe"
+    echo [OK] Python 3.11 trouvé: C:\Python311
+    goto :python_found
+)
+
+if exist "%LOCALAPPDATA%\Programs\Python\Python310\python.exe" (
+    set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python310\python.exe"
+    echo [OK] Python 3.10 trouvé: %LOCALAPPDATA%\Programs\Python\Python310
+    goto :python_found
+)
+
+if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
+    set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
+    echo [OK] Python 3.11 trouvé: %LOCALAPPDATA%\Programs\Python\Python311
+    goto :python_found
+)
+
+REM Python compatible non trouvé
 echo.
-echo Veuillez installer Python 3.10 ou supérieur :
-echo   1. Téléchargez depuis : https://www.python.org/downloads/
-echo   2. IMPORTANT : Cochez "Add Python to PATH" lors de l'installation
-echo   3. Relancez ce script après l'installation
+echo [ERREUR] Python 3.10 ou 3.11 non trouvé !
+echo.
+echo TTS (Coqui) nécessite Python 3.10 ou 3.11.
+echo Python 3.12, 3.13, 3.14 ne sont PAS supportés.
+echo.
+echo Installez Python 3.10 depuis :
+echo   https://www.python.org/downloads/release/python-31011/
+echo.
+echo Cochez "Add Python to PATH" lors de l'installation.
 echo.
 pause
 exit /b 1
 
-:python_ok
+:python_found
+%PYTHON_EXE% --version
 
 REM ================================
 REM ETAPE 2 : Créer environnement virtuel
@@ -52,11 +100,25 @@ REM ================================
 echo.
 echo [ETAPE 2/5] Création de l'environnement virtuel...
 
+REM Supprimer l'ancien venv s'il existe avec mauvaise version
 if exist "venv" (
-    echo [INFO] Environnement virtuel déjà existant
+    echo [INFO] Vérification de la version Python du venv existant...
+    venv\Scripts\python.exe --version 2>nul | findstr /C:"3.10" >nul
+    if %errorlevel% neq 0 (
+        venv\Scripts\python.exe --version 2>nul | findstr /C:"3.11" >nul
+        if %errorlevel% neq 0 (
+            echo [INFO] Ancien venv avec mauvaise version Python détecté
+            echo [INFO] Suppression et recréation...
+            rmdir /s /q venv
+        )
+    )
+)
+
+if exist "venv" (
+    echo [INFO] Environnement virtuel compatible existant
 ) else (
-    echo [INFO] Création d'un nouvel environnement virtuel...
-    python -m venv venv
+    echo [INFO] Création d'un nouvel environnement virtuel avec Python 3.10/3.11...
+    %PYTHON_EXE% -m venv venv
     if %errorlevel% neq 0 (
         echo [ERREUR] Impossible de créer l'environnement virtuel
         pause
@@ -67,6 +129,9 @@ if exist "venv" (
 
 REM Activer l'environnement virtuel
 call venv\Scripts\activate.bat
+
+REM Vérifier la version
+python --version
 
 REM ================================
 REM ETAPE 3 : Mettre à jour pip
@@ -99,7 +164,7 @@ REM ================================
 echo.
 echo [ETAPE 5/5] Vérification de l'installation...
 
-python -c "import flask; import TTS; import gradio; print('[OK] Toutes les dépendances sont installées')"
+python -c "import flask; import TTS; import fastapi; print('[OK] Toutes les dépendances sont installées')"
 if %errorlevel% neq 0 (
     echo [ERREUR] Certaines dépendances sont manquantes
     pause
@@ -107,35 +172,18 @@ if %errorlevel% neq 0 (
 )
 
 REM ================================
-REM Information sur les échantillons de voix
+REM Information finale
 REM ================================
 echo.
 echo ========================================
 echo   Installation terminée avec succès !
 echo ========================================
 echo.
-echo IMPORTANT - Configuration des voix :
+echo Pour lancer la NOUVELLE interface Timeline Studio :
+echo   - Double-cliquez sur : launch_studio.bat
+echo   - Ouvrez : http://localhost:7860
 echo.
-echo   Pour utiliser l'API avec des voix prédéfinies, placez vos
-echo   échantillons de voix dans le dossier :
-echo   %CD%\data\voices\
-echo.
-echo   Fichiers attendus :
-echo     - bob.wav      (voix "bob")
-echo     - pascal.wav   (voix "pascal")
-echo.
-echo   Format recommandé : WAV, 15-30 secondes, audio clair
-echo.
-echo ========================================
-echo   Prochaines étapes :
-echo ========================================
-echo.
-echo   Pour lancer l'API :
-echo     - Double-cliquez sur : scripts\launch_api.bat
-echo.
-echo   Pour lancer l'interface web :
-echo     - Double-cliquez sur : scripts\launch_ui.bat
-echo.
-echo   Consultez le README.md pour plus d'informations
+echo Pour l'ancienne interface Gradio :
+echo   - Double-cliquez sur : scripts\launch_ui.bat
 echo.
 pause

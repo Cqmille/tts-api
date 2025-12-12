@@ -1,5 +1,6 @@
 /**
  * TTS Timeline Studio - Main Application
+ * Supports XTTS v2 and Fish Speech engines
  */
 
 // =============================================================================
@@ -7,6 +8,8 @@
 // =============================================================================
 
 const state = {
+    engines: [],
+    currentEngine: 'xtts_v2',
     voices: [],
     languages: [],
     tracks: {},          // { voiceName: { samples: [], muted: false, solo: false } }
@@ -14,9 +17,10 @@ const state = {
     selectedSample: null,
     isPlaying: false,
     playhead: 0,         // Current playhead position in seconds
+    playStartTime: 0,    // When playback started
     zoom: 100,           // Pixels per second
     audioContext: null,
-    currentSource: null,
+    playbackAnimationId: null,
 };
 
 // =============================================================================
@@ -26,15 +30,27 @@ const state = {
 const elements = {
     // Generation
     textInput: document.getElementById('textInput'),
+    engineSelect: document.getElementById('engineSelect'),
     voiceSelect: document.getElementById('voiceSelect'),
     languageSelect: document.getElementById('languageSelect'),
+    generateBtn: document.getElementById('generateBtn'),
+    voiceChips: document.getElementById('voiceChips'),
+    uploadVoiceBtn: document.getElementById('uploadVoiceBtn'),
+    paramsRow: document.getElementById('paramsRow'),
+
+    // XTTS params
     tempSlider: document.getElementById('tempSlider'),
     tempValue: document.getElementById('tempValue'),
     speedSlider: document.getElementById('speedSlider'),
     speedValue: document.getElementById('speedValue'),
-    generateBtn: document.getElementById('generateBtn'),
-    voiceChips: document.getElementById('voiceChips'),
-    uploadVoiceBtn: document.getElementById('uploadVoiceBtn'),
+
+    // Fish Speech params
+    fishTempSlider: document.getElementById('fishTempSlider'),
+    fishTempValue: document.getElementById('fishTempValue'),
+    topPSlider: document.getElementById('topPSlider'),
+    topPValue: document.getElementById('topPValue'),
+    repPenaltySlider: document.getElementById('repPenaltySlider'),
+    repPenaltyValue: document.getElementById('repPenaltyValue'),
 
     // Timeline
     timeline: document.getElementById('timeline'),
@@ -44,6 +60,11 @@ const elements = {
     totalDuration: document.getElementById('totalDuration'),
     sampleCount: document.getElementById('sampleCount'),
     zoomSlider: document.getElementById('zoomSlider'),
+
+    // Playhead
+    playheadLine: document.getElementById('playheadLine'),
+    playheadMarker: document.getElementById('playheadMarker'),
+    playheadTime: document.getElementById('playheadTime'),
 
     // Controls
     playBtn: document.getElementById('playBtn'),
@@ -81,6 +102,14 @@ const elements = {
 // API Functions
 // =============================================================================
 
+async function fetchEngines() {
+    const res = await fetch('/api/engines');
+    const data = await res.json();
+    state.engines = data.engines;
+    state.currentEngine = data.current || 'xtts_v2';
+    return data;
+}
+
 async function fetchVoices() {
     const res = await fetch('/api/voices');
     const data = await res.json();
@@ -89,11 +118,26 @@ async function fetchVoices() {
     return data;
 }
 
-async function generateSample(text, voice, language, temperature, speed) {
+async function selectEngine(engine) {
+    const res = await fetch('/api/engines/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engine })
+    });
+    if (res.ok) {
+        state.currentEngine = engine;
+        // Refresh voices/languages for new engine
+        await fetchVoices();
+        populateLanguageSelect();
+    }
+    return res.json();
+}
+
+async function generateSample(text, voice, engine, language, params) {
     const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice, language, temperature, speed })
+        body: JSON.stringify({ text, voice, engine, language, ...params })
     });
     if (!res.ok) {
         const err = await res.json();
@@ -102,8 +146,16 @@ async function generateSample(text, voice, language, temperature, speed) {
     return res.json();
 }
 
-async function deleteSample(filename) {
+async function deleteSampleAPI(filename) {
     await fetch(`/api/samples/${filename}`, { method: 'DELETE' });
+}
+
+async function fetchWaveform(filename) {
+    const res = await fetch(`/api/samples/${filename}/waveform?points=100`);
+    if (res.ok) {
+        return res.json();
+    }
+    return null;
 }
 
 async function exportTimeline(format) {
@@ -162,6 +214,15 @@ function updateStatus(text, isLoading = false) {
     elements.statusDot.classList.toggle('loading', isLoading);
 }
 
+function populateEngineSelect() {
+    // Update select options based on available engines
+    const options = state.engines.map(e => {
+        const available = e.available ? '' : ' (non installé)';
+        return `<option value="${e.name}" ${!e.available ? 'disabled' : ''} ${e.name === state.currentEngine ? 'selected' : ''}>${e.name === 'xtts_v2' ? 'XTTS v2' : 'Fish Speech'}${available}</option>`;
+    });
+    elements.engineSelect.innerHTML = options.join('');
+}
+
 function populateVoiceSelect() {
     elements.voiceSelect.innerHTML = state.voices.map(v =>
         `<option value="${v.name}" ${v.name === 'pasqual' ? 'selected' : ''}>${v.name}</option>`
@@ -183,13 +244,27 @@ function populateVoiceChips() {
     `).join('');
 }
 
+function updateEngineParams() {
+    const engine = elements.engineSelect.value;
+    const xttsParams = document.querySelectorAll('.param-xtts');
+    const fishParams = document.querySelectorAll('.param-fish');
+
+    if (engine === 'xtts_v2') {
+        xttsParams.forEach(el => el.style.display = 'flex');
+        fishParams.forEach(el => el.style.display = 'none');
+    } else {
+        xttsParams.forEach(el => el.style.display = 'none');
+        fishParams.forEach(el => el.style.display = 'flex');
+    }
+}
+
 function updateVoicePresets(voiceName) {
     const voice = state.voices.find(v => v.name === voiceName);
     if (voice) {
-        elements.tempSlider.value = voice.temperature;
-        elements.tempValue.textContent = voice.temperature.toFixed(2);
-        elements.speedSlider.value = voice.speed;
-        elements.speedValue.textContent = voice.speed.toFixed(1);
+        elements.tempSlider.value = voice.temperature || 0.75;
+        elements.tempValue.textContent = (voice.temperature || 0.75).toFixed(2);
+        elements.speedSlider.value = voice.speed || 1.0;
+        elements.speedValue.textContent = (voice.speed || 1.0).toFixed(1);
     }
 }
 
@@ -241,7 +316,7 @@ function removeSample(sampleId) {
         if (idx !== -1) {
             const sample = track.samples[idx];
             track.samples.splice(idx, 1);
-            deleteSample(sample.filename);
+            deleteSampleAPI(sample.filename);
             break;
         }
     }
@@ -288,17 +363,18 @@ function renderTimeline() {
     const trackNames = Object.keys(state.tracks).filter(name => state.tracks[name].samples.length > 0);
 
     if (trackNames.length === 0) {
-        elements.tracksContainer.innerHTML = '';
+        elements.tracksContainer.innerHTML = '<div class="playhead-line" id="playheadLine"></div>';
         return;
     }
 
-    const totalDuration = Math.max(getTotalDuration() + 2, 10); // At least 10s visible
+    const totalDuration = Math.max(getTotalDuration() + 2, 10);
 
     // Render time ruler
     renderTimeRuler(totalDuration);
 
     // Render tracks
-    elements.tracksContainer.innerHTML = trackNames.map(voiceName => {
+    let html = '<div class="playhead-line" id="playheadLine"></div>';
+    html += trackNames.map(voiceName => {
         const track = state.tracks[voiceName];
         return `
             <div class="track" data-voice="${voiceName}">
@@ -318,13 +394,18 @@ function renderTimeline() {
         `;
     }).join('');
 
+    elements.tracksContainer.innerHTML = html;
+
+    // Re-get playhead reference
+    elements.playheadLine = document.getElementById('playheadLine');
+
     // Add event listeners to samples
     attachSampleEventListeners();
 }
 
 function renderTimeRuler(totalDuration) {
     const tickInterval = state.zoom >= 80 ? 1 : state.zoom >= 40 ? 2 : 5;
-    let html = '';
+    let html = '<div class="playhead-marker" id="playheadMarker"></div>';
 
     for (let t = 0; t <= totalDuration; t += tickInterval) {
         const x = t * state.zoom;
@@ -333,12 +414,16 @@ function renderTimeRuler(totalDuration) {
 
     elements.timeRuler.innerHTML = html;
     elements.timeRuler.style.width = (totalDuration * state.zoom) + 'px';
+
+    // Re-get playhead marker reference
+    elements.playheadMarker = document.getElementById('playheadMarker');
 }
 
 function renderSample(sample) {
     const left = sample.startTime * state.zoom;
     const width = Math.max(sample.duration * state.zoom, 40);
     const isSelected = state.selectedSample === sample.id;
+    const engineBadge = sample.engine === 'fish_speech' ? '<span class="engine-badge fish">FS</span>' : '';
 
     return `
         <div class="sample ${isSelected ? 'selected' : ''}"
@@ -346,9 +431,9 @@ function renderSample(sample) {
              style="left: ${left}px; width: ${width}px;">
             <div class="sample-handle left"></div>
             <div class="sample-waveform">
-                <canvas data-waveform='${JSON.stringify(sample.waveform)}'></canvas>
+                <canvas data-waveform='${JSON.stringify(sample.waveform || [])}'></canvas>
             </div>
-            <div class="sample-label">${sample.text}</div>
+            <div class="sample-label">${sample.text}${engineBadge}</div>
             <div class="sample-handle right"></div>
         </div>
     `;
@@ -370,7 +455,7 @@ function drawWaveforms() {
 
         ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
 
-        const barWidth = width / waveformData.length;
+        const barWidth = waveformData.length > 0 ? width / waveformData.length : 1;
 
         waveformData.forEach((amplitude, i) => {
             const barHeight = Math.max(2, amplitude * height * 0.8);
@@ -382,6 +467,36 @@ function drawWaveforms() {
 }
 
 // =============================================================================
+// Playhead Animation
+// =============================================================================
+
+function updatePlayhead(time) {
+    const x = time * state.zoom;
+    elements.playheadTime.textContent = time.toFixed(1) + 's';
+
+    if (elements.playheadLine) {
+        elements.playheadLine.style.left = (120 + x) + 'px';  // 120px is track header width
+        elements.playheadLine.classList.add('active');
+    }
+
+    if (elements.playheadMarker) {
+        elements.playheadMarker.style.left = x + 'px';
+        elements.playheadMarker.classList.add('active');
+    }
+}
+
+function hidePlayhead() {
+    elements.playheadTime.textContent = '0.0s';
+
+    if (elements.playheadLine) {
+        elements.playheadLine.classList.remove('active');
+    }
+    if (elements.playheadMarker) {
+        elements.playheadMarker.classList.remove('active');
+    }
+}
+
+// =============================================================================
 // Drag & Drop
 // =============================================================================
 
@@ -390,7 +505,7 @@ let dragState = {
     sample: null,
     startX: 0,
     startLeft: 0,
-    handle: null // 'left', 'right', or null for move
+    handle: null
 };
 
 function attachSampleEventListeners() {
@@ -435,11 +550,11 @@ function onSampleMouseDown(e) {
         startX: e.clientX,
         startLeft: sample.startTime * state.zoom,
         startWidth: sample.duration * state.zoom,
+        startDuration: sample.duration,
         handle
     };
 
     sampleEl.classList.add('dragging');
-
     e.preventDefault();
 }
 
@@ -449,7 +564,6 @@ function onMouseMove(e) {
     const deltaX = e.clientX - dragState.startX;
 
     if (dragState.handle === 'left') {
-        // Trim from left
         const newLeft = Math.max(0, dragState.startLeft + deltaX);
         const newWidth = dragState.startWidth - deltaX;
         if (newWidth > 20) {
@@ -457,31 +571,39 @@ function onMouseMove(e) {
             dragState.sampleEl.style.width = newWidth + 'px';
         }
     } else if (dragState.handle === 'right') {
-        // Trim from right
         const newWidth = Math.max(20, dragState.startWidth + deltaX);
         dragState.sampleEl.style.width = newWidth + 'px';
     } else {
-        // Move
         const newLeft = Math.max(0, dragState.startLeft + deltaX);
         dragState.sampleEl.style.left = newLeft + 'px';
     }
 }
 
-function onMouseUp(e) {
+async function onMouseUp(e) {
     if (!dragState.isDragging) return;
 
     const deltaX = e.clientX - dragState.startX;
+    const deltaTime = deltaX / state.zoom;
 
     if (dragState.handle === 'left') {
-        // Apply left trim
-        const deltaTime = deltaX / state.zoom;
-        dragState.sample.startTime = Math.max(0, dragState.sample.startTime + deltaTime);
-        dragState.sample.trimStart += deltaTime;
-        dragState.sample.duration = Math.max(0.1, dragState.sample.duration - deltaTime);
+        // Apply left trim - update duration
+        const newStartTime = Math.max(0, dragState.sample.startTime + deltaTime);
+        const newDuration = Math.max(0.1, dragState.startDuration - deltaTime);
+        dragState.sample.startTime = newStartTime;
+        dragState.sample.duration = newDuration;
+        dragState.sample.trimStart = (dragState.sample.trimStart || 0) + deltaTime;
+
+        // Fetch new waveform for trimmed sample
+        await updateSampleWaveform(dragState.sample);
+
     } else if (dragState.handle === 'right') {
         // Apply right trim
-        const deltaTime = deltaX / state.zoom;
-        dragState.sample.duration = Math.max(0.1, dragState.sample.duration + deltaTime);
+        const newDuration = Math.max(0.1, dragState.startDuration + deltaTime);
+        dragState.sample.duration = newDuration;
+
+        // Fetch new waveform for trimmed sample
+        await updateSampleWaveform(dragState.sample);
+
     } else {
         // Apply move
         const newLeft = Math.max(0, dragState.startLeft + deltaX);
@@ -493,6 +615,19 @@ function onMouseUp(e) {
 
     renderTimeline();
     updateTimelineInfo();
+}
+
+async function updateSampleWaveform(sample) {
+    // For now, just recalculate the waveform display based on trim
+    // In a more advanced implementation, we would call the API to get trimmed audio waveform
+    try {
+        const data = await fetchWaveform(sample.filename);
+        if (data && data.waveform) {
+            sample.waveform = data.waveform;
+        }
+    } catch (err) {
+        console.error('Failed to update waveform:', err);
+    }
 }
 
 // =============================================================================
@@ -588,6 +723,7 @@ async function playAll() {
 
     const ctx = state.audioContext;
     const startTime = ctx.currentTime;
+    state.playStartTime = startTime;
 
     // Schedule all samples
     for (const sample of sortedSamples) {
@@ -619,31 +755,36 @@ async function playAll() {
         }
     }
 
-    // Update playhead
+    // Animate playhead
     const totalDuration = getTotalDuration();
-    const startPlayheadTime = Date.now();
 
-    const updatePlayhead = () => {
+    const animatePlayhead = () => {
         if (!state.isPlaying) return;
 
-        const elapsed = (Date.now() - startPlayheadTime) / 1000;
-        state.playhead = elapsed;
+        const elapsed = state.audioContext.currentTime - state.playStartTime;
+        updatePlayhead(elapsed);
 
         if (elapsed >= totalDuration) {
             stopPlayback();
             return;
         }
 
-        requestAnimationFrame(updatePlayhead);
+        state.playbackAnimationId = requestAnimationFrame(animatePlayhead);
     };
 
-    updatePlayhead();
+    animatePlayhead();
 }
 
 function stopPlayback() {
     state.isPlaying = false;
     elements.playIcon.textContent = '▶';
-    state.playhead = 0;
+
+    if (state.playbackAnimationId) {
+        cancelAnimationFrame(state.playbackAnimationId);
+        state.playbackAnimationId = null;
+    }
+
+    hidePlayhead();
 
     if (state.audioContext) {
         state.audioContext.close();
@@ -656,12 +797,18 @@ async function regenerateSample(sample) {
 
     try {
         const voice = state.voices.find(v => v.name === sample.voice);
+        const engine = sample.engine || state.currentEngine;
+
+        const params = engine === 'xtts_v2'
+            ? { temperature: voice?.temperature || 0.75, speed: voice?.speed || 1.0 }
+            : { temperature: 0.7, top_p: 0.7, repetition_penalty: 1.2 };
+
         const result = await generateSample(
             sample.text,
             sample.voice,
+            engine,
             elements.languageSelect.value,
-            voice?.temperature || 0.75,
-            voice?.speed || 1.0
+            params
         );
 
         // Replace old sample with new one at same position
@@ -718,15 +865,29 @@ async function onGenerate() {
     if (!text) return;
 
     const voice = elements.voiceSelect.value;
+    const engine = elements.engineSelect.value;
     const language = elements.languageSelect.value;
-    const temperature = parseFloat(elements.tempSlider.value);
-    const speed = parseFloat(elements.speedSlider.value);
+
+    // Get params based on engine
+    let params;
+    if (engine === 'xtts_v2') {
+        params = {
+            temperature: parseFloat(elements.tempSlider.value),
+            speed: parseFloat(elements.speedSlider.value)
+        };
+    } else {
+        params = {
+            temperature: parseFloat(elements.fishTempSlider.value),
+            top_p: parseFloat(elements.topPSlider.value),
+            repetition_penalty: parseFloat(elements.repPenaltySlider.value)
+        };
+    }
 
     showLoading('Génération en cours...');
     elements.generateBtn.disabled = true;
 
     try {
-        const result = await generateSample(text, voice, language, temperature, speed);
+        const result = await generateSample(text, voice, engine, language, params);
         addSampleToTrack(result.sample);
         elements.textInput.value = '';
         elements.textInput.focus();
@@ -736,6 +897,13 @@ async function onGenerate() {
         hideLoading();
         elements.generateBtn.disabled = false;
     }
+}
+
+async function onEngineChange() {
+    const engine = elements.engineSelect.value;
+    await selectEngine(engine);
+    updateEngineParams();
+    populateLanguageSelect();
 }
 
 async function onUploadVoice() {
@@ -780,16 +948,21 @@ async function init() {
     updateStatus('Chargement...', true);
 
     try {
-        // Fetch voices
+        // Fetch engines and voices
+        await fetchEngines();
         await fetchVoices();
 
         // Populate UI
+        populateEngineSelect();
         populateVoiceSelect();
         populateLanguageSelect();
         populateVoiceChips();
         updateVoicePresets('pasqual');
+        updateEngineParams();
 
-        updateStatus(`GPU Ready - ${state.voices.length} voix`, false);
+        const engineInfo = state.engines.find(e => e.name === state.currentEngine);
+        const device = engineInfo?.available ? 'Ready' : 'Not loaded';
+        updateStatus(`${state.currentEngine} - ${device}`, false);
 
     } catch (err) {
         updateStatus('Erreur de connexion', false);
@@ -802,17 +975,30 @@ async function init() {
         if (e.key === 'Enter') onGenerate();
     });
 
+    elements.engineSelect.addEventListener('change', onEngineChange);
+
     elements.voiceSelect.addEventListener('change', e => {
         updateVoicePresets(e.target.value);
         populateVoiceChips();
     });
 
+    // XTTS sliders
     elements.tempSlider.addEventListener('input', e => {
         elements.tempValue.textContent = parseFloat(e.target.value).toFixed(2);
     });
-
     elements.speedSlider.addEventListener('input', e => {
         elements.speedValue.textContent = parseFloat(e.target.value).toFixed(1);
+    });
+
+    // Fish Speech sliders
+    elements.fishTempSlider.addEventListener('input', e => {
+        elements.fishTempValue.textContent = parseFloat(e.target.value).toFixed(2);
+    });
+    elements.topPSlider.addEventListener('input', e => {
+        elements.topPValue.textContent = parseFloat(e.target.value).toFixed(2);
+    });
+    elements.repPenaltySlider.addEventListener('input', e => {
+        elements.repPenaltyValue.textContent = parseFloat(e.target.value).toFixed(1);
     });
 
     elements.zoomSlider.addEventListener('input', e => {

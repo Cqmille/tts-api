@@ -2,9 +2,10 @@
 import os
 import sys
 import uuid
+import zipfile
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -15,7 +16,10 @@ from pydantic import BaseModel
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.new_ui.tts_engine import TTSEngine, VoiceManager, SUPPORTED_LANGUAGES
+from src.new_ui.tts_engine import (
+    create_engine_manager, TTSEngineManager, VoiceManager,
+    XTTSEngine, FishSpeechEngine
+)
 from src.new_ui.audio_processor import (
     get_wav_info, trim_audio, concat_samples, export_zip,
     export_per_track, generate_edl, get_waveform_data
@@ -35,17 +39,24 @@ for d in [VOICES_DIR, TEMP_DIR, EXPORTS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # Global instances
-tts_engine: Optional[TTSEngine] = None
+engine_manager: Optional[TTSEngineManager] = None
 voice_manager: Optional[VoiceManager] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize TTS engine on startup"""
-    global tts_engine, voice_manager
+    """Initialize TTS engines on startup"""
+    global engine_manager, voice_manager
     print("[App] Starting TTS Timeline Studio...")
-    tts_engine = TTSEngine()
+    engine_manager = create_engine_manager()
     voice_manager = VoiceManager(VOICES_DIR, PRESETS_FILE)
+
+    # Log available engines
+    engines = engine_manager.get_available_engines()
+    for eng in engines:
+        status = "available" if eng["available"] else "not installed"
+        print(f"[App] Engine {eng['name']}: {status}")
+
     print("[App] Ready!")
     yield
     print("[App] Shutting down...")
@@ -64,9 +75,15 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 class GenerateRequest(BaseModel):
     text: str
     voice: str
+    engine: str = "xtts_v2"
     language: str = "fr"
+    # Common parameters
     temperature: float = 0.75
+    # XTTS specific
     speed: float = 1.0
+    # Fish Speech specific
+    top_p: float = 0.7
+    repetition_penalty: float = 1.2
 
 
 class TrimRequest(BaseModel):
@@ -82,8 +99,15 @@ class ExportRequest(BaseModel):
 
 class PresetRequest(BaseModel):
     voice: str
-    temperature: float
-    speed: float
+    engine: str = "xtts_v2"
+    temperature: float = 0.75
+    speed: float = 1.0
+    top_p: float = 0.7
+    repetition_penalty: float = 1.2
+
+
+class EngineRequest(BaseModel):
+    engine: str
 
 
 # =============================================================================
@@ -97,6 +121,51 @@ async def index():
 
 
 # =============================================================================
+# Routes - Engines
+# =============================================================================
+
+@app.get("/api/engines")
+async def get_engines():
+    """Get list of available TTS engines"""
+    engines = engine_manager.get_available_engines()
+    current = engine_manager._current_engine
+    return {
+        "engines": engines,
+        "current": current
+    }
+
+
+@app.post("/api/engines/select")
+async def select_engine(req: EngineRequest):
+    """Select active TTS engine"""
+    if engine_manager.set_current_engine(req.engine):
+        return {"success": True, "engine": req.engine}
+    raise HTTPException(status_code=400, detail=f"Engine '{req.engine}' not available")
+
+
+@app.get("/api/engines/{engine_name}/status")
+async def get_engine_status(engine_name: str):
+    """Get detailed status of a specific engine"""
+    engine = engine_manager.get_engine(engine_name)
+    if not engine:
+        raise HTTPException(status_code=404, detail="Engine not found")
+
+    status = {
+        "name": engine_name,
+        "available": engine.is_available(),
+        "device": engine.get_device(),
+        "languages": engine.get_supported_languages(),
+        "parameters": engine.get_parameters()
+    }
+
+    # Add Fish Speech specific info
+    if engine_name == "fish_speech" and hasattr(engine, 'get_installation_status'):
+        status["installation"] = engine.get_installation_status()
+
+    return status
+
+
+# =============================================================================
 # Routes - Voices
 # =============================================================================
 
@@ -104,7 +173,10 @@ async def index():
 async def get_voices():
     """Get list of available voices with their presets"""
     voices = voice_manager.get_voices()
-    return {"voices": voices, "languages": SUPPORTED_LANGUAGES}
+    # Get languages from current engine
+    current_engine = engine_manager.get_current_engine()
+    languages = current_engine.get_supported_languages() if current_engine else ["fr", "en"]
+    return {"voices": voices, "languages": languages}
 
 
 @app.get("/api/voices/{voice_name}/preview")
@@ -153,8 +225,15 @@ async def delete_voice(voice_name: str):
 
 @app.post("/api/voices/preset")
 async def save_preset(req: PresetRequest):
-    """Save voice preset (temperature, speed)"""
-    voice_manager.save_preset(req.voice, req.temperature, req.speed)
+    """Save voice preset"""
+    voice_manager.save_preset(
+        req.voice,
+        req.temperature,
+        req.speed,
+        top_p=req.top_p,
+        repetition_penalty=req.repetition_penalty,
+        engine=req.engine
+    )
     return {"success": True}
 
 
@@ -165,6 +244,14 @@ async def save_preset(req: PresetRequest):
 @app.post("/api/generate")
 async def generate_sample(req: GenerateRequest):
     """Generate a new audio sample"""
+    # Select engine if specified
+    if req.engine:
+        engine_manager.set_current_engine(req.engine)
+
+    current_engine = engine_manager.get_current_engine()
+    if not current_engine:
+        raise HTTPException(status_code=500, detail="No TTS engine available")
+
     # Validate voice
     voice_path = voice_manager.get_voice_path(req.voice)
     if not voice_path:
@@ -173,27 +260,40 @@ async def generate_sample(req: GenerateRequest):
     # Generate unique filename
     sample_id = str(uuid.uuid4())[:8]
     timestamp = datetime.now().strftime("%H%M%S")
-    text_preview = req.text[:20].replace(" ", "_").replace("/", "_")
+    text_preview = "".join(c for c in req.text[:20] if c.isalnum() or c in " _-").replace(" ", "_")
     filename = f"{timestamp}_{req.voice}_{text_preview}_{sample_id}.wav"
     output_path = TEMP_DIR / filename
 
     try:
+        # Build kwargs based on engine
+        kwargs = {
+            "text": req.text,
+            "voice_path": voice_path,
+            "output_path": str(output_path),
+            "language": req.language,
+            "temperature": req.temperature
+        }
+
+        # Add engine-specific parameters
+        if req.engine == "xtts_v2":
+            kwargs["speed"] = req.speed
+        elif req.engine == "fish_speech":
+            kwargs["top_p"] = req.top_p
+            kwargs["repetition_penalty"] = req.repetition_penalty
+
         # Generate audio
-        tts_engine.generate(
-            text=req.text,
-            voice_path=voice_path,
-            output_path=str(output_path),
-            language=req.language,
-            temperature=req.temperature,
-            speed=req.speed
-        )
+        current_engine.generate(**kwargs)
 
         # Get info
         info = get_wav_info(str(output_path))
         waveform = get_waveform_data(str(output_path), num_points=100)
 
         # Save preset for this voice
-        voice_manager.save_preset(req.voice, req.temperature, req.speed)
+        voice_manager.save_preset(
+            req.voice, req.temperature, req.speed,
+            top_p=req.top_p, repetition_penalty=req.repetition_penalty,
+            engine=req.engine
+        )
 
         return {
             "success": True,
@@ -202,6 +302,7 @@ async def generate_sample(req: GenerateRequest):
                 "filename": filename,
                 "text": req.text,
                 "voice": req.voice,
+                "engine": req.engine,
                 "duration": info["duration"],
                 "waveform": waveform,
                 "path": f"/api/samples/{filename}"
@@ -346,17 +447,13 @@ async def export_timeline(req: ExportRequest):
 @app.get("/api/status")
 async def get_status():
     """Get system status"""
+    current_engine = engine_manager.get_current_engine() if engine_manager else None
     return {
         "status": "ok",
-        "device": tts_engine.get_device() if tts_engine else "not loaded",
+        "device": current_engine.get_device() if current_engine else "not loaded",
+        "engine": engine_manager._current_engine if engine_manager else None,
         "voices": len(voice_manager.get_voices()) if voice_manager else 0
     }
-
-
-# =============================================================================
-# Missing import for zipfile in export
-# =============================================================================
-import zipfile
 
 
 # =============================================================================

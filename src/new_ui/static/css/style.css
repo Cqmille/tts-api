@@ -675,6 +675,80 @@ body {
     background: var(--text-muted);
 }
 
+/* Parameters Row */
+.params-row {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+/* Playhead Line */
+.playhead-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--success);
+    z-index: 100;
+    pointer-events: none;
+    display: none;
+    box-shadow: 0 0 8px var(--success);
+}
+
+.playhead-line.active {
+    display: block;
+}
+
+/* Playhead Marker in Ruler */
+.playhead-marker {
+    position: absolute;
+    top: 0;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 10px solid var(--success);
+    transform: translateX(-6px);
+    z-index: 20;
+    display: none;
+}
+
+.playhead-marker.active {
+    display: block;
+}
+
+/* Playhead Time Display */
+.playhead-time {
+    font-size: 0.9rem;
+    color: var(--success);
+    font-weight: 600;
+    min-width: 50px;
+    margin-left: 8px;
+}
+
+/* Tracks Container for playhead positioning */
+#tracksContainer {
+    position: relative;
+}
+
+/* Fish Speech badge */
+.engine-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    margin-left: 4px;
+}
+
+.engine-badge.xtts {
+    background: var(--accent);
+}
+
+.engine-badge.fish {
+    background: #06b6d4;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .gen-row {
@@ -692,5 +766,9 @@ body {
     .track-header {
         width: 80px;
         min-width: 80px;
+    }
+
+    .params-row {
+        flex-wrap: wrap;
     }
 }

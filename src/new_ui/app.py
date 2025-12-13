@@ -401,11 +401,12 @@ async def delete_fish_speech_reference(reference_id: str):
     try:
         import requests as req
 
-        # Delete from Fish Speech API - uses /v1/references/delete with id param
+        # Delete from Fish Speech API - uses JSON body with reference_id
         print(f"[Fish Speech API] Deleting reference: {reference_id}")
         response = req.delete(
             f"{fish_engine.api_url}/v1/references/delete",
-            params={"id": reference_id},
+            headers={"Content-Type": "application/json"},
+            json={"reference_id": reference_id},
             timeout=30
         )
         print(f"[Fish Speech API] Delete response: {response.status_code}")
@@ -462,7 +463,8 @@ async def delete_all_fish_speech_references():
             try:
                 del_response = req.delete(
                     f"{fish_engine.api_url}/v1/references/delete",
-                    params={"id": ref_id},
+                    headers={"Content-Type": "application/json"},
+                    json={"reference_id": ref_id},
                     timeout=30
                 )
                 if del_response.status_code in [200, 204]:

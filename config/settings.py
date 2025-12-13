@@ -25,7 +25,7 @@ VOICE_SAMPLES = {
     "pascal": str(VOICES_DIR / "pascal.wav")  # Renommé de pp1.wav pour plus de clarté
 }
 
-# Configuration TTS par défaut
+# Configuration TTS par défaut (XTTS v2)
 TTS_CONFIG = {
     "model": "tts_models/multilingual/multi-dataset/xtts_v2",
     "default_language": "fr",
@@ -33,10 +33,24 @@ TTS_CONFIG = {
     "default_speed": 1.0
 }
 
-# Langues supportées
+# Configuration Fish Speech
+FISH_SPEECH_CONFIG = {
+    "api_url": "http://127.0.0.1:7870",
+    "model": "openaudio-s1-mini",
+    "default_temperature": 0.7,
+    "default_top_p": 0.7,
+    "default_repetition_penalty": 1.2
+}
+
+# Langues supportées par XTTS v2
 SUPPORTED_LANGUAGES = [
     "fr", "en", "es", "de", "it", "pt", "pl", "tr",
     "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko"
+]
+
+# Langues supportées par Fish Speech
+FISH_SPEECH_LANGUAGES = [
+    "fr", "en", "es", "de", "zh", "ja", "ko", "ar", "pt", "ru"
 ]
 
 # Configuration Flask API

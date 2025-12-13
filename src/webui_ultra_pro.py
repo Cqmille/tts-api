@@ -1,4 +1,4 @@
-"""TTS Ultra Pro - Interface Gradio refactorisée"""
+"""TTS Ultra Pro - Interface Gradio avec support multi-moteur (XTTS v2 + Fish Speech)"""
 import gradio as gr
 import sys
 import os
@@ -42,7 +42,58 @@ def create_audio_gallery():
     return gallery
 
 
-def add_sample_handler(text, voice_sel, voice_name, lang, temp, spd, v1, v2, v3, v4):
+def engine_changed_handler(engine_name):
+    """Handle engine selection change"""
+    success = audio_manager.set_engine(engine_name)
+
+    if not success and engine_name == "fish_speech":
+        sample_manager.add_log("Fish Speech non disponible - vérifiez que le serveur tourne sur http://127.0.0.1:7870", "error")
+        # Reset to XTTS
+        audio_manager.set_engine("xtts_v2")
+        engine_name = "xtts_v2"
+
+    is_xtts = (engine_name == "xtts_v2")
+    is_fish = (engine_name == "fish_speech")
+
+    # Get available languages for the selected engine
+    if is_xtts:
+        languages = SUPPORTED_LANGUAGES
+    else:
+        languages = FISH_SPEECH_LANGUAGES
+
+    sample_manager.add_log(f"Moteur changé: {engine_name}", "info")
+
+    return (
+        gr.update(visible=is_xtts),          # speed slider (XTTS only)
+        gr.update(visible=is_fish),          # top_p slider (Fish Speech only)
+        gr.update(visible=is_fish),          # repetition_penalty slider (Fish Speech only)
+        gr.update(choices=languages, value=languages[0] if languages else "fr"),  # language dropdown
+        sample_manager.get_logs_html(),      # logs
+        get_engine_status_html(engine_name)  # engine status
+    )
+
+
+def get_engine_status_html(engine_name):
+    """Generate HTML status for current engine"""
+    if engine_name == "xtts_v2":
+        return """
+        <div style='padding: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    border-radius: 8px; color: white;'>
+            <strong>🔧 Moteur actif: XTTS v2 (Coqui)</strong><br>
+            <small>Paramètres: Température, Vitesse</small>
+        </div>
+        """
+    else:
+        return """
+        <div style='padding: 10px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+                    border-radius: 8px; color: white;'>
+            <strong>🐟 Moteur actif: Fish Speech (OpenAudio S1-mini)</strong><br>
+            <small>Paramètres: Température, Top P, Pénalité répétition</small>
+        </div>
+        """
+
+
+def add_sample_handler(text, voice_sel, voice_name, lang, temp, spd, top_p, rep_pen, v1, v2, v3, v4):
     """Handle adding a new sample"""
     voice_map = {"Voix 1": v1, "Voix 2": v2, "Voix 3": v3, "Voix 4": v4}
     selected_voice = voice_map.get(voice_sel)
@@ -54,14 +105,16 @@ def add_sample_handler(text, voice_sel, voice_name, lang, temp, spd, v1, v2, v3,
         # Batch generation
         sample_manager.add_log(f"Génération en rafale: {len(paragraphs)} samples", "info")
         results = sample_manager.add_samples_batch(
-            paragraphs, selected_voice, voice_name, lang, temp, spd, audio_manager
+            paragraphs, selected_voice, voice_name, lang, temp, spd, audio_manager,
+            top_p, rep_pen
         )
         status = f"✅ {len(results)} samples générés en rafale !"
         preview = results[-1][0] if results else None
     else:
         # Single generation
         preview, status = sample_manager.add_sample(
-            text, selected_voice, voice_name, lang, temp, spd, audio_manager
+            text, selected_voice, voice_name, lang, temp, spd, audio_manager,
+            top_p, rep_pen
         )
 
     # Update audio players
@@ -120,9 +173,14 @@ def voice_changed_handler(voice_sel, v1, v2, v3, v4):
         from modules.utils import get_voice_name
         voice_name = get_voice_name(selected_voice)
         settings = sample_manager.get_voice_settings(voice_name)
-        return settings["temperature"], settings["speed"]
+        return (
+            settings.get("temperature", TTS_CONFIG["default_temperature"]),
+            settings.get("speed", TTS_CONFIG["default_speed"]),
+            settings.get("top_p", 0.7),
+            settings.get("repetition_penalty", 1.2)
+        )
 
-    return TTS_CONFIG["default_temperature"], TTS_CONFIG["default_speed"]
+    return TTS_CONFIG["default_temperature"], TTS_CONFIG["default_speed"], 0.7, 1.2
 
 
 def create_audio_gallery_components():
@@ -144,6 +202,7 @@ def get_sample_display_html():
 
     html = "<div style='display: flex; flex-direction: column; gap: 6px;'>"
     for sample in sample_manager.samples:
+        engine_badge = "🔧 XTTS" if sample.get("engine", "xtts_v2") == "xtts_v2" else "🐟 Fish"
         html += f"""
         <div style='padding: 8px 12px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
                     border-radius: 6px; display: flex; justify-content: space-between; align-items: center;'>
@@ -151,7 +210,7 @@ def get_sample_display_html():
                 🎬 Sample {sample['number']}
             </div>
             <div style='color: white; font-size: 12px;'>
-                🎙️ {sample['voice_name']}
+                🎙️ {sample['voice_name']} | {engine_badge}
             </div>
             <div style='color: rgba(255,255,255,0.9); font-size: 11px; font-style: italic;'>
                 {sample['text'][:40]}{'...' if len(sample['text']) > 40 else ''}
@@ -162,16 +221,45 @@ def get_sample_display_html():
     return html
 
 
+def check_fish_speech_status():
+    """Check Fish Speech server status and return info"""
+    engines = audio_manager.get_available_engines()
+    fish_info = next((e for e in engines if e["name"] == "fish_speech"), None)
+
+    if fish_info and fish_info["available"]:
+        return "✅ Fish Speech disponible sur http://127.0.0.1:7870"
+    else:
+        return "⚠️ Fish Speech non disponible - Vérifiez que le serveur tourne"
+
+
 # Interface Gradio
 with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
     .compact-audio audio { height: 35px !important; }
     .compact-row { margin: 4px 0 !important; padding: 6px !important; }
+    .engine-selector { margin-bottom: 15px !important; }
 """) as demo:
-    gr.Markdown("# 🎬 TTS Ultra Pro")
-    gr.Markdown("**Interface professionnelle de génération TTS multi-voix**")
+    gr.Markdown("# 🎬 TTS Ultra Pro - Multi-Engine")
+    gr.Markdown("**Interface professionnelle de génération TTS multi-voix avec support XTTS v2 et Fish Speech**")
 
     with gr.Row():
         with gr.Column(scale=1):
+            # Engine selection section
+            gr.Markdown("## 🔧 Sélection du Moteur TTS")
+
+            with gr.Group(elem_classes=["engine-selector"]):
+                engine_selector = gr.Radio(
+                    choices=[
+                        ("XTTS v2 (Coqui) - Voice cloning haute qualité", "xtts_v2"),
+                        ("Fish Speech (OpenAudio S1-mini) - Rapide, expressif", "fish_speech")
+                    ],
+                    value="xtts_v2",
+                    label="🎯 Moteur TTS",
+                    info="Choisissez le moteur de synthèse vocale"
+                )
+                engine_status = gr.HTML(value=get_engine_status_html("xtts_v2"))
+                fish_status_info = gr.Markdown(value=check_fish_speech_status())
+
+            gr.Markdown("---")
             gr.Markdown("## 🎙️ Génération de Sample")
 
             # Content input
@@ -194,7 +282,7 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
                 info="Laissez vide pour utiliser le nom du fichier"
             )
 
-            # Parameters
+            # Language selection
             with gr.Row():
                 language_input = gr.Dropdown(
                     choices=SUPPORTED_LANGUAGES,
@@ -202,15 +290,35 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
                     label="🌍 Langue"
                 )
 
-            with gr.Row():
-                temperature = gr.Slider(
-                    minimum=0.1, maximum=1.0, value=TTS_CONFIG["default_temperature"], step=0.05,
-                    label="🔥 Température"
-                )
-                speed = gr.Slider(
-                    minimum=0.5, maximum=2.0, value=TTS_CONFIG["default_speed"], step=0.1,
-                    label="⚡ Vitesse"
-                )
+            # Common parameter: Temperature (both engines)
+            temperature = gr.Slider(
+                minimum=0.1, maximum=1.0, value=TTS_CONFIG["default_temperature"], step=0.05,
+                label="🔥 Température",
+                info="Créativité de génération (plus haut = plus varié)"
+            )
+
+            # XTTS-specific parameter: Speed
+            speed = gr.Slider(
+                minimum=0.5, maximum=2.0, value=TTS_CONFIG["default_speed"], step=0.1,
+                label="⚡ Vitesse (XTTS uniquement)",
+                info="Vitesse de parole",
+                visible=True
+            )
+
+            # Fish Speech-specific parameters
+            top_p = gr.Slider(
+                minimum=0.1, maximum=1.0, value=0.7, step=0.05,
+                label="🎲 Top P (Fish Speech)",
+                info="Nucleus sampling - diversité des choix",
+                visible=False
+            )
+
+            repetition_penalty = gr.Slider(
+                minimum=1.0, maximum=2.0, value=1.2, step=0.1,
+                label="🔄 Pénalité répétition (Fish Speech)",
+                info="Évite les répétitions dans la génération",
+                visible=False
+            )
 
             # Buttons
             with gr.Row():
@@ -224,7 +332,7 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
             gr.Markdown("---")
             gr.Markdown("## 📂 Configuration des Voix")
             with gr.Accordion("Échantillons Vocaux", open=False):
-                gr.Markdown("*Uploadez vos échantillons vocaux (un par voix)*")
+                gr.Markdown("*Uploadez vos échantillons vocaux (un par voix) - WAV recommandé, 10-30 secondes*")
                 voice_sample_1 = gr.Audio(label="🎤 Voix 1", type="filepath")
                 voice_sample_2 = gr.Audio(label="🎤 Voix 2", type="filepath")
                 voice_sample_3 = gr.Audio(label="🎤 Voix 3", type="filepath")
@@ -275,11 +383,52 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
     with gr.Accordion("💡 Guide d'utilisation", open=False) as help_accordion:
         gr.Markdown(create_help_popup())
 
+        # Additional Fish Speech info
+        gr.Markdown("""
+        ---
+        ## 🐟 Fish Speech - Fonctionnalités avancées
+
+        Fish Speech (OpenAudio S1-mini) supporte des marqueurs d'émotion et de ton spéciaux :
+
+        **Émotions basiques :**
+        ```
+        (angry) (sad) (excited) (surprised) (satisfied) (delighted)
+        (scared) (worried) (upset) (nervous) (frustrated) (depressed)
+        ```
+
+        **Émotions avancées :**
+        ```
+        (disdainful) (unhappy) (anxious) (hysterical) (indifferent)
+        (impatient) (sarcastic) (sincere) (hesitating)
+        ```
+
+        **Marqueurs de ton :**
+        ```
+        (in a hurry tone) (shouting) (screaming) (whispering) (soft tone)
+        ```
+
+        **Effets spéciaux :**
+        ```
+        (laughing) (chuckling) (sobbing) (crying loudly) (sighing)
+        ```
+
+        Exemple : `(excited) Quelle bonne nouvelle ! (laughing) Ha ha ha !`
+        """)
+
     # Event handlers
+
+    # Engine change handler
+    engine_selector.change(
+        fn=engine_changed_handler,
+        inputs=[engine_selector],
+        outputs=[speed, top_p, repetition_penalty, language_input, logs_display, engine_status]
+    )
+
     add_btn.click(
         fn=add_sample_handler,
         inputs=[text_input, voice_selector, voice_name_input, language_input,
-                temperature, speed, voice_sample_1, voice_sample_2, voice_sample_3, voice_sample_4],
+                temperature, speed, top_p, repetition_penalty,
+                voice_sample_1, voice_sample_2, voice_sample_3, voice_sample_4],
         outputs=[status_add, preview_audio, sample_list_display, logs_display] + audio_players
     )
 
@@ -309,10 +458,11 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
     voice_selector.change(
         fn=voice_changed_handler,
         inputs=[voice_selector, voice_sample_1, voice_sample_2, voice_sample_3, voice_sample_4],
-        outputs=[temperature, speed]
+        outputs=[temperature, speed, top_p, repetition_penalty]
     )
 
 
 if __name__ == "__main__":
-    print("🚀 Lancement de TTS Ultra Pro...")
+    print("🚀 Lancement de TTS Ultra Pro (Multi-Engine)...")
+    print(f"📍 Moteurs disponibles: {[e['name'] for e in audio_manager.get_available_engines()]}")
     demo.launch(**GRADIO_CONFIG)

@@ -58,22 +58,27 @@ class SampleManager:
         html += "</div>"
         return html
 
-    def save_voice_settings(self, voice_name, temperature, speed):
-        """Save temperature and speed for a specific voice"""
+    def save_voice_settings(self, voice_name, temperature, speed, top_p=0.7, repetition_penalty=1.2):
+        """Save parameters for a specific voice (supports both XTTS and Fish Speech)"""
         self.voice_settings[voice_name] = {
             "temperature": temperature,
-            "speed": speed
+            "speed": speed,
+            "top_p": top_p,
+            "repetition_penalty": repetition_penalty
         }
 
     def get_voice_settings(self, voice_name):
         """Get saved settings for a voice, or return defaults"""
         return self.voice_settings.get(voice_name, {
             "temperature": 0.75,
-            "speed": 1.0
+            "speed": 1.0,
+            "top_p": 0.7,
+            "repetition_penalty": 1.2
         })
 
-    def add_sample(self, text, voice_sample, voice_name, language, temperature, speed, audio_manager):
-        """Add a new sample"""
+    def add_sample(self, text, voice_sample, voice_name, language, temperature, speed, audio_manager,
+                   top_p=0.7, repetition_penalty=1.2):
+        """Add a new sample (supports XTTS and Fish Speech parameters)"""
         try:
             if not text or not text.strip():
                 self.add_log("Le texte ne peut pas être vide", "error")
@@ -87,22 +92,25 @@ class SampleManager:
             sample_number = len(self.samples) + 1
             base_name = sanitize_filename(text, max_length=30)
             safe_voice_name = sanitize_filename(voice_name if voice_name else get_voice_name(voice_sample))
+            engine_name = audio_manager.get_current_engine()
             filename = f"sample_{sample_number:03d}_{safe_voice_name}_{base_name}.wav"
             output_path = os.path.join(self.temp_audio_dir, filename)
 
             # Generate audio
-            self.add_log(f"Génération du sample {sample_number} avec {safe_voice_name}...", "info")
+            self.add_log(f"Génération du sample {sample_number} avec {safe_voice_name} ({engine_name})...", "info")
             audio_manager.generate_audio(
                 text=text,
                 speaker_wav=voice_sample,
                 language=language,
                 output_path=output_path,
                 temperature=temperature,
-                speed=speed
+                speed=speed,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty
             )
 
             # Save voice settings
-            self.save_voice_settings(safe_voice_name, temperature, speed)
+            self.save_voice_settings(safe_voice_name, temperature, speed, top_p, repetition_penalty)
 
             # Add to samples
             self.samples.append({
@@ -112,26 +120,31 @@ class SampleManager:
                 "audio_path": output_path,
                 "filename": filename,
                 "temperature": temperature,
-                "speed": speed
+                "speed": speed,
+                "top_p": top_p,
+                "repetition_penalty": repetition_penalty,
+                "engine": engine_name
             })
 
-            self.add_log(f"✓ Sample {sample_number} généré avec succès", "success")
-            status = f"✅ Sample {sample_number} ajouté !\n🎙️ Voix: {safe_voice_name}\n📝 {text[:50]}..."
+            self.add_log(f"✓ Sample {sample_number} généré avec succès ({engine_name})", "success")
+            status = f"✅ Sample {sample_number} ajouté !\n🎙️ Voix: {safe_voice_name}\n🔧 Moteur: {engine_name}\n📝 {text[:50]}..."
             return output_path, status
 
         except Exception as e:
             self.add_log(f"Erreur lors de la génération: {str(e)}", "error")
             return None, f"❌ Erreur: {str(e)}"
 
-    def add_samples_batch(self, texts, voice_sample, voice_name, language, temperature, speed, audio_manager):
-        """Add multiple samples in batch"""
+    def add_samples_batch(self, texts, voice_sample, voice_name, language, temperature, speed, audio_manager,
+                          top_p=0.7, repetition_penalty=1.2):
+        """Add multiple samples in batch (supports XTTS and Fish Speech parameters)"""
         results = []
         for i, text in enumerate(texts, 1):
             if text.strip():
                 self.add_log(f"Génération en rafale: {i}/{len(texts)}", "info")
                 output_path, status = self.add_sample(
                     text, voice_sample, voice_name, language,
-                    temperature, speed, audio_manager
+                    temperature, speed, audio_manager,
+                    top_p, repetition_penalty
                 )
                 results.append((output_path, status))
 

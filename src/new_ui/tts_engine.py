@@ -160,7 +160,7 @@ class FishSpeechEngine(BaseTTSEngine):
             return
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.api_url = "http://127.0.0.1:8080"  # Fish Speech API server
+        self.api_url = "http://127.0.0.1:7870"  # Fish Speech API server (local)
         self.server_process = None
         self._models_loaded = False
         self._initialized = True
@@ -176,8 +176,9 @@ class FishSpeechEngine(BaseTTSEngine):
     def _check_server(self) -> bool:
         """Check if API server is running"""
         try:
-            r = requests.get(f"{self.api_url}/health", timeout=2)
-            return r.status_code == 200
+            # Fish Speech exposes OpenAPI docs at /docs or root
+            r = requests.get(f"{self.api_url}/", timeout=2)
+            return r.status_code in [200, 307]  # 307 redirect to /docs is OK
         except:
             return False
 
@@ -236,14 +237,13 @@ class FishSpeechEngine(BaseTTSEngine):
         """Generate audio using Fish Speech API"""
 
         if not self._check_server():
-            if not self.start_server():
-                raise RuntimeError("Fish Speech server not available")
+            raise RuntimeError("Fish Speech server not available on http://127.0.0.1:7870")
 
         # Read reference audio
         with open(voice_path, "rb") as f:
             reference_audio = f.read()
 
-        # Call API
+        # Call API - Fish Speech v1 API format
         try:
             # Fish Speech API expects multipart form data
             files = {
@@ -251,18 +251,18 @@ class FishSpeechEngine(BaseTTSEngine):
             }
             data = {
                 "text": text,
-                "language": language,
+                "chunk_length": 200,
+                "format": "wav",
                 "top_p": top_p,
                 "temperature": temperature,
                 "repetition_penalty": repetition_penalty,
-                "format": "wav"
             }
 
             response = requests.post(
                 f"{self.api_url}/v1/tts",
                 files=files,
                 data=data,
-                timeout=120
+                timeout=180  # Fish Speech can take longer
             )
 
             if response.status_code == 200:
@@ -270,10 +270,10 @@ class FishSpeechEngine(BaseTTSEngine):
                     f.write(response.content)
                 return output_path
             else:
-                raise RuntimeError(f"API error: {response.status_code} - {response.text}")
+                raise RuntimeError(f"Fish Speech API error: {response.status_code} - {response.text}")
 
         except requests.exceptions.ConnectionError:
-            raise RuntimeError("Fish Speech server not running. Start it with: python -m tools.api_server")
+            raise RuntimeError("Fish Speech server not running on http://127.0.0.1:7870")
 
     def get_engine_name(self) -> str:
         return "fish_speech"
@@ -317,7 +317,8 @@ class FishSpeechEngine(BaseTTSEngine):
         ]
 
     def is_available(self) -> bool:
-        return self._check_installation() and self._check_models()
+        """Fish Speech is available if the server is running"""
+        return self._check_server()
 
     def get_device(self) -> str:
         return self.device

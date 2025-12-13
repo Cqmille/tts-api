@@ -20,6 +20,7 @@ XTTS_LANGUAGES = ["fr", "en", "es", "de", "it", "pt", "pl", "tr", "ru", "nl", "c
 FISH_LANGUAGES = ["fr", "en", "es", "de", "zh", "ja", "ko", "ar", "pt", "ru"]
 FISH_SPEECH_DIR = Path(__file__).parent.parent.parent / "fish-speech"
 FISH_CHECKPOINTS_DIR = FISH_SPEECH_DIR / "checkpoints" / "openaudio-s1-mini"
+FISH_PRESETS_DIR = Path(__file__).parent.parent.parent / "data" / "fish_presets"
 
 # =============================================================================
 # Base TTS Engine Interface
@@ -253,6 +254,27 @@ class FishSpeechEngine(BaseTTSEngine):
 
             # Add reference if it doesn't exist
             if voice_id not in existing_refs:
+                # Look for transcription in preset file
+                preset_file = FISH_PRESETS_DIR / f"{voice_id}.txt"
+
+                if not preset_file.exists():
+                    raise RuntimeError(
+                        f"Référence Fish Speech '{voice_id}' non trouvée.\n"
+                        f"Créez un fichier de transcription: data/fish_presets/{voice_id}.txt\n"
+                        f"Ou ajoutez le profil via l'interface de gestion.\n"
+                        f"Profils disponibles: {', '.join(existing_refs) if existing_refs else 'aucun'}"
+                    )
+
+                # Read transcription from preset file
+                with open(preset_file, "r", encoding="utf-8") as f:
+                    transcription = f.read().strip()
+
+                if not transcription:
+                    raise RuntimeError(
+                        f"Le fichier de transcription data/fish_presets/{voice_id}.txt est vide.\n"
+                        f"Fish Speech nécessite la transcription exacte de l'audio de référence."
+                    )
+
                 print(f"[Fish Speech] Adding reference voice: {voice_id}")
                 with open(voice_path, "rb") as f:
                     audio_data = f.read()
@@ -262,7 +284,7 @@ class FishSpeechEngine(BaseTTSEngine):
                 }
                 data = {
                     "id": voice_id,
-                    "text": ""
+                    "text": transcription
                 }
 
                 add_response = requests.post(
@@ -273,7 +295,7 @@ class FishSpeechEngine(BaseTTSEngine):
                 )
 
                 if add_response.status_code not in [200, 201]:
-                    print(f"[Fish Speech] Warning: Could not add reference: {add_response.text}")
+                    raise RuntimeError(f"[Fish Speech] Erreur ajout référence: {add_response.text}")
 
             # Generate TTS using the reference_id
             tts_payload = {

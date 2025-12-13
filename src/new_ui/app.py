@@ -66,10 +66,15 @@ async def lifespan(app: FastAPI):
         # Pre-load Fish Speech references
         try:
             import requests as req
-            response = req.get(f"{fish_engine.api_url}/v1/references/list", timeout=10)
+            response = req.get(
+                f"{fish_engine.api_url}/v1/references/list",
+                headers={"Accept": "application/json"},
+                timeout=10
+            )
             if response.status_code == 200:
                 raw_refs = response.json()
-                refs = raw_refs if isinstance(raw_refs, list) else raw_refs.get("references", [])
+                # Fish Speech uses "reference_ids" key
+                refs = raw_refs if isinstance(raw_refs, list) else raw_refs.get("reference_ids", raw_refs.get("references", []))
                 print(f"[App] Fish Speech references loaded: {refs}")
             else:
                 print(f"[App] Could not load Fish Speech references: {response.status_code}")
@@ -276,8 +281,14 @@ async def get_fish_speech_references():
     try:
         import requests as req
         print(f"[Fish Speech API] Fetching references from {fish_engine.api_url}/v1/references/list")
-        response = req.get(f"{fish_engine.api_url}/v1/references/list", timeout=10)
+        # Important: Request JSON format explicitly (Fish Speech defaults to MessagePack)
+        response = req.get(
+            f"{fish_engine.api_url}/v1/references/list",
+            headers={"Accept": "application/json"},
+            timeout=10
+        )
         print(f"[Fish Speech API] Response status: {response.status_code}")
+        print(f"[Fish Speech API] Response content-type: {response.headers.get('content-type')}")
 
         if response.status_code == 200:
             raw_response = response.json()
@@ -287,8 +298,8 @@ async def get_fish_speech_references():
             if isinstance(raw_response, list):
                 refs = raw_response
             elif isinstance(raw_response, dict):
-                # Try common keys
-                refs = raw_response.get("references", raw_response.get("ids", raw_response.get("data", [])))
+                # Fish Speech uses "reference_ids" key
+                refs = raw_response.get("reference_ids", raw_response.get("references", raw_response.get("ids", raw_response.get("data", []))))
             else:
                 refs = []
 

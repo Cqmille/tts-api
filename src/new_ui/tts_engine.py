@@ -239,35 +239,60 @@ class FishSpeechEngine(BaseTTSEngine):
         if not self._check_server():
             raise RuntimeError("Fish Speech server not available on http://127.0.0.1:7870")
 
-        # Read reference audio
-        with open(voice_path, "rb") as f:
-            reference_audio = f.read()
+        # Create a unique reference ID based on the voice file path
+        voice_id = os.path.splitext(os.path.basename(voice_path))[0]
 
         # Call API - Fish Speech v1 API format
         try:
-            # Reference audio as file upload
-            files = {
-                "reference_audio": ("reference.wav", reference_audio, "audio/wav")
-            }
-            # Text and format as form data
-            data = {
+            # Check if reference already exists
+            try:
+                list_response = requests.get(f"{self.api_url}/v1/references/list", timeout=10)
+                existing_refs = list_response.json() if list_response.status_code == 200 else []
+            except:
+                existing_refs = []
+
+            # Add reference if it doesn't exist
+            if voice_id not in existing_refs:
+                print(f"[Fish Speech] Adding reference voice: {voice_id}")
+                with open(voice_path, "rb") as f:
+                    audio_data = f.read()
+
+                files = {
+                    "audio": (os.path.basename(voice_path), audio_data, "audio/wav")
+                }
+                data = {
+                    "id": voice_id,
+                    "text": ""
+                }
+
+                add_response = requests.post(
+                    f"{self.api_url}/v1/references/add",
+                    files=files,
+                    data=data,
+                    timeout=60
+                )
+
+                if add_response.status_code not in [200, 201]:
+                    print(f"[Fish Speech] Warning: Could not add reference: {add_response.text}")
+
+            # Generate TTS using the reference_id
+            tts_payload = {
                 "text": text,
                 "chunk_length": 200,
                 "format": "wav",
-            }
-            # Numeric params as query parameters (FastAPI/Pydantic expects floats)
-            params = {
+                "reference_id": voice_id,
+                "normalize": True,
+                "streaming": False,
+                "max_new_tokens": 1024,
                 "top_p": float(top_p),
-                "temperature": float(temperature),
                 "repetition_penalty": float(repetition_penalty),
+                "temperature": float(temperature)
             }
 
             response = requests.post(
                 f"{self.api_url}/v1/tts",
-                files=files,
-                data=data,
-                params=params,
-                timeout=180  # Fish Speech can take longer
+                json=tts_payload,
+                timeout=180
             )
 
             if response.status_code == 200:

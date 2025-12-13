@@ -120,37 +120,67 @@ class AudioManager:
                               temperature=0.7, top_p=0.7, repetition_penalty=1.2):
         """Generate audio using Fish Speech API"""
         import requests
+        import os
+        import hashlib
 
         if not self._check_fish_speech():
             raise RuntimeError("Fish Speech server not available on http://127.0.0.1:7870")
 
-        # Read reference audio
-        with open(speaker_wav, "rb") as f:
-            reference_audio = f.read()
+        base_url = "http://127.0.0.1:7870"
 
-        # Call Fish Speech API
-        # Reference audio as file upload
-        files = {
-            "reference_audio": ("reference.wav", reference_audio, "audio/wav")
-        }
-        # Text and format as form data
-        data = {
+        # Create a unique reference ID based on the voice file path
+        voice_id = os.path.splitext(os.path.basename(speaker_wav))[0]
+
+        # Check if reference already exists
+        try:
+            list_response = requests.get(f"{base_url}/v1/references/list", timeout=10)
+            existing_refs = list_response.json() if list_response.status_code == 200 else []
+        except:
+            existing_refs = []
+
+        # Add reference if it doesn't exist
+        if voice_id not in existing_refs:
+            print(f"[Fish Speech] Adding reference voice: {voice_id}")
+            with open(speaker_wav, "rb") as f:
+                audio_data = f.read()
+
+            # Add reference with audio file
+            # The 'text' field is optional context about what's being said in the reference
+            files = {
+                "audio": (os.path.basename(speaker_wav), audio_data, "audio/wav")
+            }
+            data = {
+                "id": voice_id,
+                "text": ""  # Empty text - Fish Speech will analyze the audio
+            }
+
+            add_response = requests.post(
+                f"{base_url}/v1/references/add",
+                files=files,
+                data=data,
+                timeout=60
+            )
+
+            if add_response.status_code not in [200, 201]:
+                print(f"[Fish Speech] Warning: Could not add reference: {add_response.text}")
+
+        # Generate TTS using the reference_id
+        tts_payload = {
             "text": text,
             "chunk_length": 200,
             "format": "wav",
-        }
-        # Numeric params as query parameters (FastAPI/Pydantic expects floats)
-        params = {
+            "reference_id": voice_id,
+            "normalize": True,
+            "streaming": False,
+            "max_new_tokens": 1024,
             "top_p": float(top_p),
-            "temperature": float(temperature),
             "repetition_penalty": float(repetition_penalty),
+            "temperature": float(temperature)
         }
 
         response = requests.post(
-            "http://127.0.0.1:7870/v1/tts",
-            files=files,
-            data=data,
-            params=params,
+            f"{base_url}/v1/tts",
+            json=tts_payload,
             timeout=180
         )
 

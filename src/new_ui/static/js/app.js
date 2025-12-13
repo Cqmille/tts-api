@@ -12,6 +12,9 @@ const state = {
     currentEngine: 'xtts_v2',
     voices: [],
     languages: [],
+    fishReferences: [],  // Fish Speech voice references
+    fishPresets: [],     // Available presets for Fish Speech
+    selectedFishRef: null,
     tracks: {},          // { voiceName: { samples: [], muted: false, solo: false } }
     samples: [],         // All samples flat list for reference
     selectedSample: null,
@@ -89,6 +92,22 @@ const elements = {
     voiceFileInput: document.getElementById('voiceFileInput'),
     cancelUploadBtn: document.getElementById('cancelUploadBtn'),
     confirmUploadBtn: document.getElementById('confirmUploadBtn'),
+
+    // Fish Speech Modal
+    fishRefModal: document.getElementById('fishRefModal'),
+    fishRefIdInput: document.getElementById('fishRefIdInput'),
+    fishRefAudioInput: document.getElementById('fishRefAudioInput'),
+    fishRefTranscriptionInput: document.getElementById('fishRefTranscriptionInput'),
+    presetSuggestions: document.getElementById('presetSuggestions'),
+    presetList: document.getElementById('presetList'),
+    cancelFishRefBtn: document.getElementById('cancelFishRefBtn'),
+    confirmFishRefBtn: document.getElementById('confirmFishRefBtn'),
+
+    // Fish Speech Panel
+    voiceBarXTTS: document.getElementById('voiceBarXTTS'),
+    fishSpeechPanel: document.getElementById('fishSpeechPanel'),
+    fishRefs: document.getElementById('fishRefs'),
+    addFishRefBtn: document.getElementById('addFishRefBtn'),
 
     // Loading
     loadingOverlay: document.getElementById('loadingOverlay'),
@@ -197,6 +216,68 @@ async function previewVoice(voiceName) {
 }
 
 // =============================================================================
+// Fish Speech API Functions
+// =============================================================================
+
+async function fetchFishReferences() {
+    try {
+        const res = await fetch('/api/fish_speech/references');
+        const data = await res.json();
+        state.fishReferences = data.references || [];
+        return data;
+    } catch (err) {
+        console.error('Failed to fetch Fish Speech references:', err);
+        state.fishReferences = [];
+        return { references: [], available: false };
+    }
+}
+
+async function fetchFishPresets() {
+    try {
+        const res = await fetch('/api/fish_speech/presets');
+        const data = await res.json();
+        state.fishPresets = data.presets || [];
+        return data;
+    } catch (err) {
+        console.error('Failed to fetch Fish Speech presets:', err);
+        state.fishPresets = [];
+        return { presets: [] };
+    }
+}
+
+async function addFishReference(referenceId, audioFile, transcription) {
+    const formData = new FormData();
+    formData.append('reference_id', referenceId);
+    formData.append('audio', audioFile);
+    formData.append('transcription', transcription);
+
+    const res = await fetch('/api/fish_speech/references', {
+        method: 'POST',
+        body: formData
+    });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to add reference');
+    }
+
+    return res.json();
+}
+
+async function deleteFishReference(referenceId) {
+    const res = await fetch(`/api/fish_speech/references/${referenceId}`, {
+        method: 'DELETE'
+    });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to delete reference');
+    }
+
+    return res.json();
+}
+
+// =============================================================================
 // UI Functions
 // =============================================================================
 
@@ -252,9 +333,121 @@ function updateEngineParams() {
     if (engine === 'xtts_v2') {
         xttsParams.forEach(el => el.style.display = 'flex');
         fishParams.forEach(el => el.style.display = 'none');
+        elements.voiceBarXTTS.style.display = 'flex';
+        elements.fishSpeechPanel.style.display = 'none';
     } else {
         xttsParams.forEach(el => el.style.display = 'none');
         fishParams.forEach(el => el.style.display = 'flex');
+        elements.voiceBarXTTS.style.display = 'none';
+        elements.fishSpeechPanel.style.display = 'flex';
+        // Refresh Fish Speech references
+        fetchFishReferences().then(() => populateFishRefs());
+    }
+}
+
+function populateFishRefs() {
+    if (state.fishReferences.length === 0) {
+        elements.fishRefs.innerHTML = '<span class="no-refs">Aucune voix configurée - Ajoutez une voix pour commencer</span>';
+        // Update voice select to be empty for Fish Speech
+        elements.voiceSelect.innerHTML = '<option value="" disabled selected>Ajoutez une voix</option>';
+        return;
+    }
+
+    elements.fishRefs.innerHTML = state.fishReferences.map(ref => `
+        <div class="fish-ref-chip ${state.selectedFishRef === ref.id ? 'active' : ''}" data-ref="${ref.id}">
+            <span>${ref.id}</span>
+            <button class="delete-btn" data-ref="${ref.id}" title="Supprimer">×</button>
+        </div>
+    `).join('');
+
+    // Update voice select for Fish Speech
+    elements.voiceSelect.innerHTML = state.fishReferences.map(ref =>
+        `<option value="${ref.id}" ${ref.id === state.selectedFishRef ? 'selected' : ''}>${ref.id}</option>`
+    ).join('');
+
+    // Select first if none selected
+    if (!state.selectedFishRef && state.fishReferences.length > 0) {
+        state.selectedFishRef = state.fishReferences[0].id;
+        elements.voiceSelect.value = state.selectedFishRef;
+        populateFishRefs();
+    }
+}
+
+function openFishRefModal() {
+    elements.fishRefIdInput.value = '';
+    elements.fishRefAudioInput.value = '';
+    elements.fishRefTranscriptionInput.value = '';
+
+    // Load presets
+    fetchFishPresets().then(() => {
+        if (state.fishPresets.length > 0) {
+            elements.presetSuggestions.style.display = 'block';
+            elements.presetList.innerHTML = state.fishPresets.map(preset => `
+                <div class="preset-item" data-preset="${preset.id}" data-transcription="${preset.transcription}">
+                    ${preset.id} ${preset.has_audio ? '🔊' : ''}
+                </div>
+            `).join('');
+        } else {
+            elements.presetSuggestions.style.display = 'none';
+        }
+    });
+
+    elements.fishRefModal.classList.add('active');
+}
+
+function closeFishRefModal() {
+    elements.fishRefModal.classList.remove('active');
+}
+
+async function onAddFishRef() {
+    const refId = elements.fishRefIdInput.value.trim();
+    const audioFile = elements.fishRefAudioInput.files[0];
+    const transcription = elements.fishRefTranscriptionInput.value.trim();
+
+    if (!refId) {
+        alert('Veuillez entrer un nom pour la voix');
+        return;
+    }
+    if (!audioFile) {
+        alert('Veuillez sélectionner un fichier audio');
+        return;
+    }
+    if (!transcription) {
+        alert('Veuillez entrer la transcription exacte de l\'audio');
+        return;
+    }
+
+    showLoading('Ajout de la voix Fish Speech...');
+
+    try {
+        await addFishReference(refId, audioFile, transcription);
+        await fetchFishReferences();
+        state.selectedFishRef = refId;
+        populateFishRefs();
+        closeFishRefModal();
+    } catch (err) {
+        alert('Erreur: ' + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function onDeleteFishRef(refId) {
+    if (!confirm(`Supprimer la voix "${refId}" ?`)) return;
+
+    showLoading('Suppression...');
+
+    try {
+        await deleteFishReference(refId);
+        await fetchFishReferences();
+        if (state.selectedFishRef === refId) {
+            state.selectedFishRef = state.fishReferences.length > 0 ? state.fishReferences[0].id : null;
+        }
+        populateFishRefs();
+    } catch (err) {
+        alert('Erreur: ' + err.message);
+    } finally {
+        hideLoading();
     }
 }
 
@@ -904,6 +1097,15 @@ async function onEngineChange() {
     await selectEngine(engine);
     updateEngineParams();
     populateLanguageSelect();
+
+    // Update voice selection based on engine
+    if (engine === 'fish_speech') {
+        await fetchFishReferences();
+        populateFishRefs();
+    } else {
+        populateVoiceSelect();
+        populateVoiceChips();
+    }
 }
 
 async function onUploadVoice() {
@@ -954,10 +1156,21 @@ async function init() {
 
         // Populate UI
         populateEngineSelect();
-        populateVoiceSelect();
         populateLanguageSelect();
-        populateVoiceChips();
-        updateVoicePresets('pasqual');
+
+        // Handle engine-specific initialization
+        if (state.currentEngine === 'fish_speech') {
+            // Fetch Fish Speech references
+            await fetchFishReferences();
+            populateFishRefs();
+        } else {
+            populateVoiceSelect();
+            populateVoiceChips();
+            if (state.voices.length > 0) {
+                updateVoicePresets(state.voices[0].name);
+            }
+        }
+
         updateEngineParams();
 
         const engineInfo = state.engines.find(e => e.name === state.currentEngine);
@@ -1023,10 +1236,47 @@ async function init() {
         }
     });
 
-    // Upload modal
+    // Upload modal (XTTS)
     elements.uploadVoiceBtn.addEventListener('click', openUploadModal);
     elements.cancelUploadBtn.addEventListener('click', closeUploadModal);
     elements.confirmUploadBtn.addEventListener('click', onUploadVoice);
+
+    // Fish Speech modal
+    elements.addFishRefBtn.addEventListener('click', openFishRefModal);
+    elements.cancelFishRefBtn.addEventListener('click', closeFishRefModal);
+    elements.confirmFishRefBtn.addEventListener('click', onAddFishRef);
+
+    // Fish Speech refs panel
+    elements.fishRefs.addEventListener('click', e => {
+        const chip = e.target.closest('.fish-ref-chip');
+        const deleteBtn = e.target.closest('.delete-btn');
+
+        if (deleteBtn) {
+            e.stopPropagation();
+            onDeleteFishRef(deleteBtn.dataset.ref);
+            return;
+        }
+
+        if (chip) {
+            state.selectedFishRef = chip.dataset.ref;
+            elements.voiceSelect.value = state.selectedFishRef;
+            populateFishRefs();
+        }
+    });
+
+    // Preset suggestions in Fish Speech modal
+    elements.presetList.addEventListener('click', e => {
+        const presetItem = e.target.closest('.preset-item');
+        if (presetItem) {
+            const presetId = presetItem.dataset.preset;
+            elements.fishRefIdInput.value = presetId;
+            // Find the full transcription from state (now contains full text)
+            const preset = state.fishPresets.find(p => p.id === presetId);
+            if (preset) {
+                elements.fishRefTranscriptionInput.value = preset.transcription;
+            }
+        }
+    });
 
     // Playback
     elements.playBtn.addEventListener('click', playAll);

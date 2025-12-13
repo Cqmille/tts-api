@@ -749,6 +749,122 @@ body {
     background: #06b6d4;
 }
 
+/* Fish Speech Panel */
+.fish-speech-panel {
+    background: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 12px;
+}
+
+.fish-refs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.fish-ref-chip {
+    background: var(--bg-dark);
+    border: 1px solid #06b6d4;
+    border-radius: 20px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.fish-ref-chip:hover {
+    background: rgba(6, 182, 212, 0.2);
+}
+
+.fish-ref-chip.active {
+    background: #06b6d4;
+    color: white;
+}
+
+.fish-ref-chip .delete-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 2px;
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+
+.fish-ref-chip .delete-btn:hover {
+    opacity: 1;
+}
+
+.no-refs {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+}
+
+/* Modal Large */
+.modal.modal-large {
+    max-width: 500px;
+}
+
+.modal-info {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    padding: 10px;
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: 6px;
+}
+
+.gen-group textarea {
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+}
+
+/* Preset Suggestions */
+.preset-suggestions {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-dark);
+    border-radius: 6px;
+}
+
+.preset-suggestions label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 8px;
+}
+
+#presetList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.preset-item {
+    background: var(--bg-track);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.preset-item:hover {
+    border-color: #06b6d4;
+    background: rgba(6, 182, 212, 0.1);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .gen-row {

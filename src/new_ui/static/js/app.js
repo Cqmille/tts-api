@@ -108,6 +108,7 @@ const elements = {
     fishSpeechPanel: document.getElementById('fishSpeechPanel'),
     fishRefs: document.getElementById('fishRefs'),
     addFishRefBtn: document.getElementById('addFishRefBtn'),
+    resetFishRefsBtn: document.getElementById('resetFishRefsBtn'),
 
     // Loading
     loadingOverlay: document.getElementById('loadingOverlay'),
@@ -272,6 +273,19 @@ async function deleteFishReference(referenceId) {
     if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || 'Failed to delete reference');
+    }
+
+    return res.json();
+}
+
+async function deleteAllFishReferences() {
+    const res = await fetch('/api/fish_speech/references', {
+        method: 'DELETE'
+    });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to delete all references');
     }
 
     return res.json();
@@ -444,6 +458,40 @@ async function onDeleteFishRef(refId) {
             state.selectedFishRef = state.fishReferences.length > 0 ? state.fishReferences[0].id : null;
         }
         populateFishRefs();
+    } catch (err) {
+        alert('Erreur: ' + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function onResetAllFishRefs() {
+    // Check if there are references to delete
+    if (state.fishReferences.length === 0) {
+        alert('Aucune voix à supprimer.');
+        return;
+    }
+
+    // Build confirmation message with list of voices
+    const voiceList = state.fishReferences.map(ref => `  • ${ref.id}`).join('\n');
+    const confirmMsg = `⚠️ ATTENTION: Cette action va supprimer TOUTES les voix Fish Speech !\n\nVoix qui seront supprimées:\n${voiceList}\n\nCette action est irréversible. Continuer ?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    showLoading('Suppression de toutes les voix...');
+
+    try {
+        const result = await deleteAllFishReferences();
+        await fetchFishReferences();
+        state.selectedFishRef = null;
+        populateFishRefs();
+
+        if (result.deleted && result.deleted.length > 0) {
+            alert(`${result.deleted.length} voix supprimée(s) avec succès.`);
+        }
+        if (result.errors && result.errors.length > 0) {
+            alert(`Erreurs lors de la suppression: ${result.errors.join(', ')}`);
+        }
     } catch (err) {
         alert('Erreur: ' + err.message);
     } finally {
@@ -1245,6 +1293,7 @@ async function init() {
     elements.addFishRefBtn.addEventListener('click', openFishRefModal);
     elements.cancelFishRefBtn.addEventListener('click', closeFishRefModal);
     elements.confirmFishRefBtn.addEventListener('click', onAddFishRef);
+    elements.resetFishRefsBtn.addEventListener('click', onResetAllFishRefs);
 
     // Fish Speech refs panel
     elements.fishRefs.addEventListener('click', e => {

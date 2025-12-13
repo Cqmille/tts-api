@@ -807,6 +807,22 @@ body {
     font-style: italic;
 }
 
+.reset-voice-btn {
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 20px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    color: var(--accent);
+    cursor: pointer;
+    margin-left: auto;
+}
+
+.reset-voice-btn:hover {
+    background: var(--accent);
+    color: white;
+}
+
 /* Modal Large */
 .modal.modal-large {
     max-width: 500px;

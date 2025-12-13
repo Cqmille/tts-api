@@ -57,6 +57,25 @@ async def lifespan(app: FastAPI):
         status = "available" if eng["available"] else "not installed"
         print(f"[App] Engine {eng['name']}: {status}")
 
+    # If Fish Speech is available, set it as default and load existing references
+    fish_engine = engine_manager.get_engine("fish_speech")
+    if fish_engine and fish_engine.is_available():
+        print("[App] Fish Speech is available, setting as default engine")
+        engine_manager.set_current_engine("fish_speech")
+
+        # Pre-load Fish Speech references
+        try:
+            import requests as req
+            response = req.get(f"{fish_engine.api_url}/v1/references/list", timeout=10)
+            if response.status_code == 200:
+                raw_refs = response.json()
+                refs = raw_refs if isinstance(raw_refs, list) else raw_refs.get("references", [])
+                print(f"[App] Fish Speech references loaded: {refs}")
+            else:
+                print(f"[App] Could not load Fish Speech references: {response.status_code}")
+        except Exception as e:
+            print(f"[App] Error loading Fish Speech references: {e}")
+
     print("[App] Ready!")
     yield
     print("[App] Shutting down...")
@@ -251,13 +270,30 @@ async def get_fish_speech_references():
     """Get list of Fish Speech voice references"""
     fish_engine = engine_manager.get_engine("fish_speech")
     if not fish_engine or not fish_engine.is_available():
+        print("[Fish Speech API] Engine not available")
         return {"references": [], "available": False}
 
     try:
         import requests as req
+        print(f"[Fish Speech API] Fetching references from {fish_engine.api_url}/v1/references/list")
         response = req.get(f"{fish_engine.api_url}/v1/references/list", timeout=10)
+        print(f"[Fish Speech API] Response status: {response.status_code}")
+
         if response.status_code == 200:
-            refs = response.json()
+            raw_response = response.json()
+            print(f"[Fish Speech API] Raw response: {raw_response}")
+
+            # Handle different response formats
+            if isinstance(raw_response, list):
+                refs = raw_response
+            elif isinstance(raw_response, dict):
+                # Try common keys
+                refs = raw_response.get("references", raw_response.get("ids", raw_response.get("data", [])))
+            else:
+                refs = []
+
+            print(f"[Fish Speech API] Parsed refs: {refs}")
+
             # Get transcription info from preset files
             references_with_info = []
             for ref_id in refs:
@@ -270,9 +306,14 @@ async def get_fish_speech_references():
                     "id": ref_id,
                     "transcription": transcription[:100] + "..." if len(transcription) > 100 else transcription
                 })
+
+            print(f"[Fish Speech API] Returning {len(references_with_info)} references")
             return {"references": references_with_info, "available": True}
+
+        print(f"[Fish Speech API] Non-200 response: {response.text}")
         return {"references": [], "available": True}
     except Exception as e:
+        print(f"[Fish Speech API] Error: {e}")
         return {"references": [], "available": True, "error": str(e)}
 
 
@@ -349,16 +390,24 @@ async def delete_fish_speech_reference(reference_id: str):
     try:
         import requests as req
 
-        # Delete from Fish Speech API
+        # Delete from Fish Speech API - uses /v1/references/delete with id param
+        print(f"[Fish Speech API] Deleting reference: {reference_id}")
         response = req.delete(
-            f"{fish_engine.api_url}/v1/references/{reference_id}",
+            f"{fish_engine.api_url}/v1/references/delete",
+            params={"id": reference_id},
             timeout=30
         )
+        print(f"[Fish Speech API] Delete response: {response.status_code}")
 
         # Also remove local preset file if exists
         preset_file = FISH_PRESETS_DIR / f"{reference_id}.txt"
         if preset_file.exists():
             preset_file.unlink()
+
+        # Also remove voice file if exists
+        voice_file = VOICES_DIR / f"{reference_id}.wav"
+        if voice_file.exists():
+            voice_file.unlink()
 
         if response.status_code in [200, 204, 404]:
             return {"success": True}

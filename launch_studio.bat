@@ -5,9 +5,7 @@ echo ============================================
 echo   TTS Timeline Studio
 echo ============================================
 echo.
-
 cd /d "%~dp0"
-
 REM Vérifier si le venv existe
 if not exist "venv\Scripts\activate.bat" (
     echo [ERREUR] Environnement virtuel non trouvé !
@@ -17,10 +15,8 @@ if not exist "venv\Scripts\activate.bat" (
     pause
     exit /b 1
 )
-
 REM Activer l'environnement virtuel
 call venv\Scripts\activate.bat
-
 echo Démarrage du serveur...
 echo.
 echo ============================================
@@ -29,7 +25,7 @@ echo ============================================
 echo.
 echo Appuyez sur Ctrl+C pour arrêter
 echo.
-
+REM Ouvrir le navigateur après un délai
+start "" cmd /c "timeout /t 2 /nobreak > nul && start http://localhost:7860"
 python -m uvicorn src.new_ui.app:app --host 0.0.0.0 --port 7860
-
 pause

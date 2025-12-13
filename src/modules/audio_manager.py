@@ -129,22 +129,28 @@ class AudioManager:
             reference_audio = f.read()
 
         # Call Fish Speech API
+        # Reference audio as file upload
         files = {
             "reference_audio": ("reference.wav", reference_audio, "audio/wav")
         }
+        # Text and format as form data
         data = {
             "text": text,
             "chunk_length": 200,
             "format": "wav",
-            "top_p": top_p,
-            "temperature": temperature,
-            "repetition_penalty": repetition_penalty,
+        }
+        # Numeric params as query parameters (FastAPI/Pydantic expects floats)
+        params = {
+            "top_p": float(top_p),
+            "temperature": float(temperature),
+            "repetition_penalty": float(repetition_penalty),
         }
 
         response = requests.post(
             "http://127.0.0.1:7870/v1/tts",
             files=files,
             data=data,
+            params=params,
             timeout=180
         )
 

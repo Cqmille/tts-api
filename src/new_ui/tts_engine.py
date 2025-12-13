@@ -245,23 +245,28 @@ class FishSpeechEngine(BaseTTSEngine):
 
         # Call API - Fish Speech v1 API format
         try:
-            # Fish Speech API expects multipart form data
+            # Reference audio as file upload
             files = {
                 "reference_audio": ("reference.wav", reference_audio, "audio/wav")
             }
+            # Text and format as form data
             data = {
                 "text": text,
                 "chunk_length": 200,
                 "format": "wav",
-                "top_p": top_p,
-                "temperature": temperature,
-                "repetition_penalty": repetition_penalty,
+            }
+            # Numeric params as query parameters (FastAPI/Pydantic expects floats)
+            params = {
+                "top_p": float(top_p),
+                "temperature": float(temperature),
+                "repetition_penalty": float(repetition_penalty),
             }
 
             response = requests.post(
                 f"{self.api_url}/v1/tts",
                 files=files,
                 data=data,
+                params=params,
                 timeout=180  # Fish Speech can take longer
             )
 

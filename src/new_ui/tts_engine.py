@@ -247,8 +247,20 @@ class FishSpeechEngine(BaseTTSEngine):
         try:
             # Check if reference already exists
             try:
-                list_response = requests.get(f"{self.api_url}/v1/references/list", timeout=10)
-                existing_refs = list_response.json() if list_response.status_code == 200 else []
+                list_response = requests.get(
+                    f"{self.api_url}/v1/references/list",
+                    headers={"Accept": "application/json"},
+                    timeout=10
+                )
+                if list_response.status_code == 200:
+                    raw_refs = list_response.json()
+                    # Fish Speech returns {"reference_ids": [...]} or a list
+                    if isinstance(raw_refs, list):
+                        existing_refs = raw_refs
+                    else:
+                        existing_refs = raw_refs.get("reference_ids", raw_refs.get("references", []))
+                else:
+                    existing_refs = []
             except:
                 existing_refs = []
 
@@ -294,7 +306,8 @@ class FishSpeechEngine(BaseTTSEngine):
                     timeout=60
                 )
 
-                if add_response.status_code not in [200, 201]:
+                # 409 means reference already exists - that's OK
+                if add_response.status_code not in [200, 201, 409]:
                     raise RuntimeError(f"[Fish Speech] Erreur ajout référence: {add_response.text}")
 
             # Generate TTS using the reference_id

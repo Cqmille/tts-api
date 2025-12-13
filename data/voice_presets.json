@@ -1,0 +1,9 @@
+{
+  "pasqual": {
+    "temperature": 0.75,
+    "speed": 1.0,
+    "top_p": 0.7,
+    "repetition_penalty": 1.2,
+    "engine": "xtts_v2"
+  }
+}

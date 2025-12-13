@@ -20,6 +20,7 @@ XTTS_LANGUAGES = ["fr", "en", "es", "de", "it", "pt", "pl", "tr", "ru", "nl", "c
 FISH_LANGUAGES = ["fr", "en", "es", "de", "zh", "ja", "ko", "ar", "pt", "ru"]
 FISH_SPEECH_DIR = Path(__file__).parent.parent.parent / "fish-speech"
 FISH_CHECKPOINTS_DIR = FISH_SPEECH_DIR / "checkpoints" / "openaudio-s1-mini"
+FISH_PRESETS_DIR = Path(__file__).parent.parent.parent / "data" / "fish_presets"
 
 # =============================================================================
 # Base TTS Engine Interface
@@ -160,7 +161,7 @@ class FishSpeechEngine(BaseTTSEngine):
             return
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.api_url = "http://127.0.0.1:8080"  # Fish Speech API server
+        self.api_url = "http://127.0.0.1:7870"  # Fish Speech API server (local)
         self.server_process = None
         self._models_loaded = False
         self._initialized = True
@@ -176,8 +177,9 @@ class FishSpeechEngine(BaseTTSEngine):
     def _check_server(self) -> bool:
         """Check if API server is running"""
         try:
-            r = requests.get(f"{self.api_url}/health", timeout=2)
-            return r.status_code == 200
+            # Fish Speech exposes OpenAPI docs at /docs or root
+            r = requests.get(f"{self.api_url}/", timeout=2)
+            return r.status_code in [200, 307]  # 307 redirect to /docs is OK
         except:
             return False
 
@@ -236,33 +238,96 @@ class FishSpeechEngine(BaseTTSEngine):
         """Generate audio using Fish Speech API"""
 
         if not self._check_server():
-            if not self.start_server():
-                raise RuntimeError("Fish Speech server not available")
+            raise RuntimeError("Fish Speech server not available on http://127.0.0.1:7870")
 
-        # Read reference audio
-        with open(voice_path, "rb") as f:
-            reference_audio = f.read()
+        # Create a unique reference ID based on the voice file path
+        voice_id = os.path.splitext(os.path.basename(voice_path))[0]
 
-        # Call API
+        # Call API - Fish Speech v1 API format
         try:
-            # Fish Speech API expects multipart form data
-            files = {
-                "reference_audio": ("reference.wav", reference_audio, "audio/wav")
-            }
-            data = {
+            # Check if reference already exists
+            try:
+                list_response = requests.get(
+                    f"{self.api_url}/v1/references/list",
+                    headers={"Accept": "application/json"},
+                    timeout=10
+                )
+                if list_response.status_code == 200:
+                    raw_refs = list_response.json()
+                    # Fish Speech returns {"reference_ids": [...]} or a list
+                    if isinstance(raw_refs, list):
+                        existing_refs = raw_refs
+                    else:
+                        existing_refs = raw_refs.get("reference_ids", raw_refs.get("references", []))
+                else:
+                    existing_refs = []
+            except:
+                existing_refs = []
+
+            # Add reference if it doesn't exist
+            if voice_id not in existing_refs:
+                # Look for transcription in preset file
+                preset_file = FISH_PRESETS_DIR / f"{voice_id}.txt"
+
+                if not preset_file.exists():
+                    raise RuntimeError(
+                        f"Référence Fish Speech '{voice_id}' non trouvée.\n"
+                        f"Créez un fichier de transcription: data/fish_presets/{voice_id}.txt\n"
+                        f"Ou ajoutez le profil via l'interface de gestion.\n"
+                        f"Profils disponibles: {', '.join(existing_refs) if existing_refs else 'aucun'}"
+                    )
+
+                # Read transcription from preset file
+                with open(preset_file, "r", encoding="utf-8") as f:
+                    transcription = f.read().strip()
+
+                if not transcription:
+                    raise RuntimeError(
+                        f"Le fichier de transcription data/fish_presets/{voice_id}.txt est vide.\n"
+                        f"Fish Speech nécessite la transcription exacte de l'audio de référence."
+                    )
+
+                print(f"[Fish Speech] Adding reference voice: {voice_id}")
+                with open(voice_path, "rb") as f:
+                    audio_data = f.read()
+
+                files = {
+                    "audio": (os.path.basename(voice_path), audio_data, "audio/wav")
+                }
+                data = {
+                    "id": voice_id,
+                    "text": transcription
+                }
+
+                add_response = requests.post(
+                    f"{self.api_url}/v1/references/add",
+                    files=files,
+                    data=data,
+                    timeout=60
+                )
+
+                # 409 means reference already exists - that's OK
+                if add_response.status_code not in [200, 201, 409]:
+                    raise RuntimeError(f"[Fish Speech] Erreur ajout référence: {add_response.text}")
+
+            # Generate TTS using the reference_id
+            tts_payload = {
                 "text": text,
-                "language": language,
-                "top_p": top_p,
-                "temperature": temperature,
-                "repetition_penalty": repetition_penalty,
-                "format": "wav"
+                "chunk_length": 200,
+                "format": "wav",
+                "reference_id": voice_id,
+                "normalize": True,
+                "streaming": False,
+                "max_new_tokens": 1024,
+                "top_p": float(top_p),
+                "repetition_penalty": float(repetition_penalty),
+                "temperature": float(temperature)
             }
 
             response = requests.post(
                 f"{self.api_url}/v1/tts",
-                files=files,
-                data=data,
-                timeout=120
+                json=tts_payload,
+                timeout=180
             )
 
             if response.status_code == 200:
@@ -270,10 +335,10 @@ class FishSpeechEngine(BaseTTSEngine):
                     f.write(response.content)
                 return output_path
             else:
-                raise RuntimeError(f"API error: {response.status_code} - {response.text}")
+                raise RuntimeError(f"Fish Speech API error: {response.status_code} - {response.text}")
 
         except requests.exceptions.ConnectionError:
-            raise RuntimeError("Fish Speech server not running. Start it with: python -m tools.api_server")
+            raise RuntimeError("Fish Speech server not running on http://127.0.0.1:7870")
 
     def get_engine_name(self) -> str:
         return "fish_speech"
@@ -317,7 +382,8 @@ class FishSpeechEngine(BaseTTSEngine):
         ]
 
     def is_available(self) -> bool:
-        return self._check_installation() and self._check_models()
+        """Fish Speech is available if the server is running"""
+        return self._check_server()
 
     def get_device(self) -> str:
         return self.device

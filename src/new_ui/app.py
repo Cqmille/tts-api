@@ -57,6 +57,30 @@ async def lifespan(app: FastAPI):
         status = "available" if eng["available"] else "not installed"
         print(f"[App] Engine {eng['name']}: {status}")
 
+    # If Fish Speech is available, set it as default and load existing references
+    fish_engine = engine_manager.get_engine("fish_speech")
+    if fish_engine and fish_engine.is_available():
+        print("[App] Fish Speech is available, setting as default engine")
+        engine_manager.set_current_engine("fish_speech")
+
+        # Pre-load Fish Speech references
+        try:
+            import requests as req
+            response = req.get(
+                f"{fish_engine.api_url}/v1/references/list",
+                headers={"Accept": "application/json"},
+                timeout=10
+            )
+            if response.status_code == 200:
+                raw_refs = response.json()
+                # Fish Speech uses "reference_ids" key
+                refs = raw_refs if isinstance(raw_refs, list) else raw_refs.get("reference_ids", raw_refs.get("references", []))
+                print(f"[App] Fish Speech references loaded: {refs}")
+            else:
+                print(f"[App] Could not load Fish Speech references: {response.status_code}")
+        except Exception as e:
+            print(f"[App] Error loading Fish Speech references: {e}")
+
     print("[App] Ready!")
     yield
     print("[App] Shutting down...")
@@ -108,6 +132,11 @@ class PresetRequest(BaseModel):
 
 class EngineRequest(BaseModel):
     engine: str
+
+
+# Fish Speech presets directory
+FISH_PRESETS_DIR = DATA_DIR / "fish_presets"
+FISH_PRESETS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # =============================================================================
@@ -235,6 +264,256 @@ async def save_preset(req: PresetRequest):
         engine=req.engine
     )
     return {"success": True}
+
+
+# =============================================================================
+# Routes - Fish Speech References
+# =============================================================================
+
+@app.get("/api/fish_speech/references")
+async def get_fish_speech_references():
+    """Get list of Fish Speech voice references"""
+    fish_engine = engine_manager.get_engine("fish_speech")
+    if not fish_engine or not fish_engine.is_available():
+        print("[Fish Speech API] Engine not available")
+        return {"references": [], "available": False}
+
+    try:
+        import requests as req
+        print(f"[Fish Speech API] Fetching references from {fish_engine.api_url}/v1/references/list")
+        # Important: Request JSON format explicitly (Fish Speech defaults to MessagePack)
+        response = req.get(
+            f"{fish_engine.api_url}/v1/references/list",
+            headers={"Accept": "application/json"},
+            timeout=10
+        )
+        print(f"[Fish Speech API] Response status: {response.status_code}")
+        print(f"[Fish Speech API] Response content-type: {response.headers.get('content-type')}")
+
+        if response.status_code == 200:
+            raw_response = response.json()
+            print(f"[Fish Speech API] Raw response: {raw_response}")
+
+            # Handle different response formats
+            if isinstance(raw_response, list):
+                refs = raw_response
+            elif isinstance(raw_response, dict):
+                # Fish Speech uses "reference_ids" key
+                refs = raw_response.get("reference_ids", raw_response.get("references", raw_response.get("ids", raw_response.get("data", []))))
+            else:
+                refs = []
+
+            print(f"[Fish Speech API] Parsed refs: {refs}")
+
+            # Get transcription info from preset files
+            references_with_info = []
+            for ref_id in refs:
+                preset_file = FISH_PRESETS_DIR / f"{ref_id}.txt"
+                transcription = ""
+                if preset_file.exists():
+                    with open(preset_file, "r", encoding="utf-8") as f:
+                        transcription = f.read().strip()
+                references_with_info.append({
+                    "id": ref_id,
+                    "transcription": transcription[:100] + "..." if len(transcription) > 100 else transcription
+                })
+
+            print(f"[Fish Speech API] Returning {len(references_with_info)} references")
+            return {"references": references_with_info, "available": True}
+
+        print(f"[Fish Speech API] Non-200 response: {response.text}")
+        return {"references": [], "available": True}
+    except Exception as e:
+        print(f"[Fish Speech API] Error: {e}")
+        return {"references": [], "available": True, "error": str(e)}
+
+
+@app.post("/api/fish_speech/references")
+async def add_fish_speech_reference(
+    audio: UploadFile = File(...),
+    reference_id: str = Form(...),
+    transcription: str = Form(...)
+):
+    """Add a new Fish Speech voice reference"""
+    fish_engine = engine_manager.get_engine("fish_speech")
+    if not fish_engine or not fish_engine.is_available():
+        raise HTTPException(status_code=503, detail="Fish Speech server not available")
+
+    # Validate inputs
+    clean_id = "".join(c for c in reference_id if c.isalnum() or c in "_-").lower()
+    if not clean_id:
+        raise HTTPException(status_code=400, detail="Invalid reference ID")
+
+    if not transcription.strip():
+        raise HTTPException(status_code=400, detail="Transcription cannot be empty")
+
+    try:
+        import requests as req
+
+        # Read audio data
+        audio_data = await audio.read()
+
+        # Add reference to Fish Speech API
+        files = {
+            "audio": (audio.filename or f"{clean_id}.wav", audio_data, "audio/wav")
+        }
+        data = {
+            "id": clean_id,
+            "text": transcription.strip()
+        }
+
+        response = req.post(
+            f"{fish_engine.api_url}/v1/references/add",
+            files=files,
+            data=data,
+            timeout=60
+        )
+
+        if response.status_code not in [200, 201]:
+            error_msg = response.text
+            raise HTTPException(status_code=400, detail=f"Fish Speech error: {error_msg}")
+
+        # Save transcription to preset file for future use
+        preset_file = FISH_PRESETS_DIR / f"{clean_id}.txt"
+        with open(preset_file, "w", encoding="utf-8") as f:
+            f.write(transcription.strip())
+
+        # Also save the audio file to voices directory for consistency
+        voice_file = VOICES_DIR / f"{clean_id}.wav"
+        with open(voice_file, "wb") as f:
+            f.write(audio_data)
+
+        return {"success": True, "reference_id": clean_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/fish_speech/references/{reference_id}")
+async def delete_fish_speech_reference(reference_id: str):
+    """Delete a Fish Speech voice reference"""
+    fish_engine = engine_manager.get_engine("fish_speech")
+    if not fish_engine or not fish_engine.is_available():
+        raise HTTPException(status_code=503, detail="Fish Speech server not available")
+
+    try:
+        import requests as req
+
+        # Delete from Fish Speech API - uses JSON body with reference_id
+        print(f"[Fish Speech API] Deleting reference: {reference_id}")
+        response = req.delete(
+            f"{fish_engine.api_url}/v1/references/delete",
+            headers={"Content-Type": "application/json"},
+            json={"reference_id": reference_id},
+            timeout=30
+        )
+        print(f"[Fish Speech API] Delete response: {response.status_code}")
+
+        # Also remove local preset file if exists
+        preset_file = FISH_PRESETS_DIR / f"{reference_id}.txt"
+        if preset_file.exists():
+            preset_file.unlink()
+
+        # Also remove voice file if exists
+        voice_file = VOICES_DIR / f"{reference_id}.wav"
+        if voice_file.exists():
+            voice_file.unlink()
+
+        if response.status_code in [200, 204, 404]:
+            return {"success": True}
+        else:
+            raise HTTPException(status_code=400, detail=f"Fish Speech error: {response.text}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/fish_speech/references")
+async def delete_all_fish_speech_references():
+    """Delete ALL Fish Speech voice references"""
+    fish_engine = engine_manager.get_engine("fish_speech")
+    if not fish_engine or not fish_engine.is_available():
+        raise HTTPException(status_code=503, detail="Fish Speech server not available")
+
+    try:
+        import requests as req
+
+        # First get list of all references
+        response = req.get(
+            f"{fish_engine.api_url}/v1/references/list",
+            headers={"Accept": "application/json"},
+            timeout=10
+        )
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=400, detail="Could not fetch references list")
+
+        raw_response = response.json()
+        refs = raw_response.get("reference_ids", []) if isinstance(raw_response, dict) else raw_response
+
+        deleted = []
+        errors = []
+
+        # Delete each reference
+        for ref_id in refs:
+            try:
+                del_response = req.delete(
+                    f"{fish_engine.api_url}/v1/references/delete",
+                    headers={"Content-Type": "application/json"},
+                    json={"reference_id": ref_id},
+                    timeout=30
+                )
+                if del_response.status_code in [200, 204]:
+                    deleted.append(ref_id)
+
+                    # Also remove local files
+                    preset_file = FISH_PRESETS_DIR / f"{ref_id}.txt"
+                    if preset_file.exists():
+                        preset_file.unlink()
+                    voice_file = VOICES_DIR / f"{ref_id}.wav"
+                    if voice_file.exists():
+                        voice_file.unlink()
+                else:
+                    errors.append(ref_id)
+            except Exception as e:
+                errors.append(f"{ref_id}: {str(e)}")
+
+        print(f"[Fish Speech API] Deleted {len(deleted)} references: {deleted}")
+        if errors:
+            print(f"[Fish Speech API] Errors: {errors}")
+
+        return {"success": True, "deleted": deleted, "errors": errors}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/fish_speech/presets")
+async def get_fish_speech_presets():
+    """Get available presets (transcription files)"""
+    presets = []
+    for preset_file in FISH_PRESETS_DIR.glob("*.txt"):
+        preset_id = preset_file.stem
+        with open(preset_file, "r", encoding="utf-8") as f:
+            transcription = f.read().strip()
+
+        # Check if voice file exists
+        voice_file = VOICES_DIR / f"{preset_id}.wav"
+        has_audio = voice_file.exists()
+
+        presets.append({
+            "id": preset_id,
+            "transcription": transcription,  # Full transcription for modal
+            "has_audio": has_audio
+        })
+
+    return {"presets": presets}
 
 
 # =============================================================================

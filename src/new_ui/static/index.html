@@ -85,11 +85,21 @@
             </div>
         </div>
 
-        <!-- Voice Bar -->
-        <div class="voice-bar">
-            <span class="voice-bar-label">Voix :</span>
+        <!-- Voice Bar (XTTS) -->
+        <div class="voice-bar" id="voiceBarXTTS">
+            <span class="voice-bar-label">Voix XTTS :</span>
             <div class="voice-chips" id="voiceChips"></div>
             <button class="upload-voice-btn" id="uploadVoiceBtn">+ Ajouter</button>
+        </div>
+
+        <!-- Fish Speech References Panel -->
+        <div class="voice-bar fish-speech-panel" id="fishSpeechPanel" style="display: none;">
+            <span class="voice-bar-label">Voix Fish Speech :</span>
+            <div class="fish-refs" id="fishRefs">
+                <span class="no-refs">Aucune voix configurée</span>
+            </div>
+            <button class="upload-voice-btn" id="addFishRefBtn">+ Ajouter une voix</button>
+            <button class="reset-voice-btn" id="resetFishRefsBtn" title="Supprimer toutes les voix">🗑️ Réinitialiser</button>
         </div>
     </section>
 
@@ -158,10 +168,10 @@
         <div class="context-menu-item danger" data-action="delete">🗑️ Supprimer</div>
     </div>
 
-    <!-- Upload Modal -->
+    <!-- Upload Modal (XTTS) -->
     <div class="modal-overlay" id="uploadModal">
         <div class="modal">
-            <h2>Ajouter une voix</h2>
+            <h2>Ajouter une voix XTTS</h2>
             <div class="gen-group" style="margin-bottom: 12px;">
                 <label>Nom de la voix</label>
                 <input type="text" id="voiceNameInput" placeholder="ex: marie">
@@ -173,6 +183,40 @@
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="cancelUploadBtn">Annuler</button>
                 <button class="btn" id="confirmUploadBtn">Ajouter</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fish Speech Reference Modal -->
+    <div class="modal-overlay" id="fishRefModal">
+        <div class="modal modal-large">
+            <h2>Ajouter une voix Fish Speech</h2>
+            <p class="modal-info">Fish Speech nécessite un fichier audio ET la transcription exacte de ce qui est dit dans l'audio.</p>
+
+            <div class="gen-group" style="margin-bottom: 12px;">
+                <label>Nom de la voix (ID)</label>
+                <input type="text" id="fishRefIdInput" placeholder="ex: marie">
+            </div>
+
+            <div class="gen-group" style="margin-bottom: 12px;">
+                <label>Fichier audio WAV</label>
+                <input type="file" id="fishRefAudioInput" accept=".wav">
+            </div>
+
+            <div class="gen-group" style="margin-bottom: 12px;">
+                <label>Transcription exacte de l'audio</label>
+                <textarea id="fishRefTranscriptionInput" rows="5" placeholder="Tapez ici exactement ce qui est dit dans le fichier audio..."></textarea>
+            </div>
+
+            <!-- Preset suggestions -->
+            <div class="preset-suggestions" id="presetSuggestions" style="display: none;">
+                <label>Presets disponibles :</label>
+                <div id="presetList"></div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="cancelFishRefBtn">Annuler</button>
+                <button class="btn" id="confirmFishRefBtn">Ajouter la voix</button>
             </div>
         </div>
     </div>

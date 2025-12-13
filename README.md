@@ -1,8 +1,12 @@
-# 🎤 TTS API - Clonage de Voix avec XTTS v2
+# 🎤 TTS API - Clonage de Voix Multi-Moteur
 
-API REST et interfaces web Gradio pour le clonage de voix en temps réel, basées sur le modèle XTTS v2 de Coqui TTS.
+API REST et interfaces web Gradio pour le clonage de voix en temps réel, avec support **XTTS v2** et **Fish Speech (OpenAudio S1-mini)**.
 
 ## ✨ Fonctionnalités
+
+### 🔧 Support Multi-Moteur
+- **XTTS v2 (Coqui)** : Voice cloning haute qualité, 16 langues
+- **Fish Speech (OpenAudio S1-mini)** : Rapide, expressif, support des émotions
 
 ### 🔌 API REST (Flask)
 - Endpoint `/api/tts` pour générer de l'audio à partir de texte
@@ -184,6 +188,41 @@ SUPPORTED_LANGUAGES = [
     "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko"
 ]
 ```
+
+## 🐟 Fish Speech - Guide Rapide
+
+Fish Speech est un moteur TTS alternatif, plus rapide et supportant les émotions.
+
+### Prérequis
+- Fish Speech doit tourner sur `http://localhost:7870`
+- GPU NVIDIA recommandé (RTX 3070 ou mieux)
+
+### Ajouter une Voix Fish Speech (Preset)
+
+**Méthode 1 : Via l'interface**
+1. Ouvrir l'accordéon "🐟 Gestion des Profils Fish Speech"
+2. Remplir : ID, Audio (WAV 10-30s), **Transcription exacte**
+3. Cliquer "Créer le profil"
+
+**Méthode 2 : Via fichiers (chargement automatique)**
+1. Placer l'audio dans `data/voices/` (ex: `mavoix.wav`)
+2. Créer `data/fish_presets/mavoix.txt` avec la transcription exacte
+3. Au démarrage, le profil sera chargé automatiquement
+
+### Structure des Presets
+```
+data/
+├── voices/
+│   └── pasqual.wav          # Audio de référence
+└── fish_presets/
+    └── pasqual.txt          # Transcription de l'audio
+```
+
+### Marqueurs d'Émotion Fish Speech
+```
+(angry) (sad) (excited) (surprised) (whispering) (laughing)
+```
+Exemple : `(excited) Quelle bonne nouvelle !`
 
 ## 💡 Conseils pour de Meilleurs Résultats
 

@@ -232,6 +232,89 @@ def check_fish_speech_status():
         return "⚠️ Fish Speech non disponible - Vérifiez que le serveur tourne"
 
 
+# =========================================================================
+# Fish Speech Reference Management
+# =========================================================================
+
+def get_fish_references_html():
+    """Generate HTML list of Fish Speech references"""
+    refs = audio_manager.fish_speech_list_references()
+
+    if not refs:
+        return """
+        <div style='padding: 15px; text-align: center; color: #666; background: #f5f5f5; border-radius: 8px;'>
+            <p>🐟 Aucun profil vocal Fish Speech configuré</p>
+            <small>Ajoutez un profil ci-dessous pour utiliser Fish Speech</small>
+        </div>
+        """
+
+    html = "<div style='display: flex; flex-direction: column; gap: 8px;'>"
+    for ref in refs:
+        html += f"""
+        <div style='padding: 10px 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+                    border-radius: 8px; display: flex; justify-content: space-between; align-items: center;'>
+            <div style='color: white;'>
+                <strong>🐟 {ref}</strong>
+            </div>
+            <div style='color: rgba(255,255,255,0.8); font-size: 12px;'>
+                Profil vocal actif
+            </div>
+        </div>
+        """
+    html += "</div>"
+    return html
+
+
+def get_fish_references_choices():
+    """Get list of Fish Speech references for dropdown"""
+    refs = audio_manager.fish_speech_list_references()
+    return refs if refs else []
+
+
+def add_fish_reference_handler(ref_id, audio_file, transcript):
+    """Handle adding a new Fish Speech reference"""
+    if not ref_id or not ref_id.strip():
+        return "❌ L'ID du profil est requis", get_fish_references_html(), gr.update(choices=get_fish_references_choices())
+
+    if not audio_file:
+        return "❌ Le fichier audio est requis", get_fish_references_html(), gr.update(choices=get_fish_references_choices())
+
+    if not transcript or not transcript.strip():
+        return "❌ La transcription est obligatoire pour Fish Speech", get_fish_references_html(), gr.update(choices=get_fish_references_choices())
+
+    # Clean the reference ID (remove spaces, special chars)
+    clean_id = ref_id.strip().lower().replace(" ", "_")
+
+    success, message = audio_manager.fish_speech_add_reference(clean_id, audio_file, transcript)
+
+    if success:
+        sample_manager.add_log(f"Profil Fish Speech '{clean_id}' ajouté", "success")
+        return f"✅ {message}", get_fish_references_html(), gr.update(choices=get_fish_references_choices())
+    else:
+        sample_manager.add_log(f"Erreur ajout profil: {message}", "error")
+        return f"❌ {message}", get_fish_references_html(), gr.update(choices=get_fish_references_choices())
+
+
+def delete_fish_reference_handler(ref_id):
+    """Handle deleting a Fish Speech reference"""
+    if not ref_id:
+        return "❌ Sélectionnez un profil à supprimer", get_fish_references_html(), gr.update(choices=get_fish_references_choices())
+
+    success, message = audio_manager.fish_speech_delete_reference(ref_id)
+
+    if success:
+        sample_manager.add_log(f"Profil Fish Speech '{ref_id}' supprimé", "success")
+        return f"✅ {message}", get_fish_references_html(), gr.update(choices=get_fish_references_choices())
+    else:
+        sample_manager.add_log(f"Erreur suppression profil: {message}", "error")
+        return f"❌ {message}", get_fish_references_html(), gr.update(choices=get_fish_references_choices())
+
+
+def refresh_fish_references_handler():
+    """Refresh the Fish Speech references list"""
+    return get_fish_references_html(), gr.update(choices=get_fish_references_choices())
+
+
 # Interface Gradio
 with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
     .compact-audio audio { height: 35px !important; }
@@ -331,12 +414,61 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
             # Voice samples section (moved to bottom)
             gr.Markdown("---")
             gr.Markdown("## 📂 Configuration des Voix")
-            with gr.Accordion("Échantillons Vocaux", open=False):
+            with gr.Accordion("Échantillons Vocaux (XTTS)", open=False):
                 gr.Markdown("*Uploadez vos échantillons vocaux (un par voix) - WAV recommandé, 10-30 secondes*")
                 voice_sample_1 = gr.Audio(label="🎤 Voix 1", type="filepath")
                 voice_sample_2 = gr.Audio(label="🎤 Voix 2", type="filepath")
                 voice_sample_3 = gr.Audio(label="🎤 Voix 3", type="filepath")
                 voice_sample_4 = gr.Audio(label="🎤 Voix 4", type="filepath")
+
+            # Fish Speech Reference Management
+            with gr.Accordion("🐟 Gestion des Profils Fish Speech", open=False):
+                gr.Markdown("""
+                **Important:** Fish Speech nécessite de créer un profil vocal avant de générer.
+                Le profil inclut l'audio de référence ET la transcription de ce qui est dit.
+                """)
+
+                # List of existing references
+                fish_refs_display = gr.HTML(value=get_fish_references_html())
+
+                gr.Markdown("### ➕ Ajouter un nouveau profil")
+
+                with gr.Row():
+                    fish_ref_id = gr.Textbox(
+                        label="🏷️ ID du profil",
+                        placeholder="Ex: pascal, marie, narrateur...",
+                        info="Identifiant unique (sans espaces)",
+                        scale=1
+                    )
+
+                fish_ref_audio = gr.Audio(
+                    label="🎤 Fichier audio de référence",
+                    type="filepath",
+                    info="WAV recommandé, 10-30 secondes de parole claire"
+                )
+
+                fish_ref_text = gr.Textbox(
+                    label="📝 Transcription (OBLIGATOIRE)",
+                    placeholder="Tapez exactement ce qui est dit dans l'audio...",
+                    lines=3,
+                    info="Le texte exact prononcé dans l'échantillon audio"
+                )
+
+                with gr.Row():
+                    fish_add_btn = gr.Button("➕ Créer le profil", variant="primary")
+                    fish_refresh_btn = gr.Button("🔄 Actualiser", variant="secondary")
+
+                fish_status = gr.Textbox(label="Statut", interactive=False, lines=1)
+
+                gr.Markdown("### 🗑️ Supprimer un profil")
+                with gr.Row():
+                    fish_delete_dropdown = gr.Dropdown(
+                        choices=get_fish_references_choices(),
+                        label="Sélectionner un profil",
+                        info="Choisir le profil à supprimer",
+                        scale=2
+                    )
+                    fish_delete_btn = gr.Button("🗑️ Supprimer", variant="stop", scale=1)
 
         # Right column - Samples & Logs
         with gr.Column(scale=1):
@@ -459,6 +591,24 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
         fn=voice_changed_handler,
         inputs=[voice_selector, voice_sample_1, voice_sample_2, voice_sample_3, voice_sample_4],
         outputs=[temperature, speed, top_p, repetition_penalty]
+    )
+
+    # Fish Speech reference management handlers
+    fish_add_btn.click(
+        fn=add_fish_reference_handler,
+        inputs=[fish_ref_id, fish_ref_audio, fish_ref_text],
+        outputs=[fish_status, fish_refs_display, fish_delete_dropdown]
+    )
+
+    fish_delete_btn.click(
+        fn=delete_fish_reference_handler,
+        inputs=[fish_delete_dropdown],
+        outputs=[fish_status, fish_refs_display, fish_delete_dropdown]
+    )
+
+    fish_refresh_btn.click(
+        fn=refresh_fish_references_handler,
+        outputs=[fish_refs_display, fish_delete_dropdown]
     )
 
 

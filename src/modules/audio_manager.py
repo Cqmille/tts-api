@@ -120,49 +120,24 @@ class AudioManager:
                               temperature=0.7, top_p=0.7, repetition_penalty=1.2):
         """Generate audio using Fish Speech API"""
         import requests
-        import os
-        import hashlib
 
         if not self._check_fish_speech():
             raise RuntimeError("Fish Speech server not available on http://127.0.0.1:7870")
 
         base_url = "http://127.0.0.1:7870"
 
-        # Create a unique reference ID based on the voice file path
+        # Get reference ID from the voice file name
         voice_id = os.path.splitext(os.path.basename(speaker_wav))[0]
 
-        # Check if reference already exists
-        try:
-            list_response = requests.get(f"{base_url}/v1/references/list", timeout=10)
-            existing_refs = list_response.json() if list_response.status_code == 200 else []
-        except:
-            existing_refs = []
+        # Check if reference exists - it must be created first via the UI
+        existing_refs = self.fish_speech_list_references()
 
-        # Add reference if it doesn't exist
         if voice_id not in existing_refs:
-            print(f"[Fish Speech] Adding reference voice: {voice_id}")
-            with open(speaker_wav, "rb") as f:
-                audio_data = f.read()
-
-            # Add reference with audio file
-            # The 'text' field is optional context about what's being said in the reference
-            files = {
-                "audio": (os.path.basename(speaker_wav), audio_data, "audio/wav")
-            }
-            data = {
-                "id": voice_id,
-                "text": ""  # Empty text - Fish Speech will analyze the audio
-            }
-
-            add_response = requests.post(
-                f"{base_url}/v1/references/add",
-                files=files,
-                data=data,
-                timeout=60
+            raise RuntimeError(
+                f"Référence Fish Speech '{voice_id}' non trouvée.\n"
+                f"Créez d'abord le profil vocal dans la section 'Gestion des Profils Fish Speech'.\n"
+                f"Profils disponibles: {', '.join(existing_refs) if existing_refs else 'aucun'}"
             )
-
-            if add_response.status_code not in [200, 201]:
-                print(f"[Fish Speech] Warning: Could not add reference: {add_response.text}")
 
         # Generate TTS using the reference_id
         tts_payload = {
@@ -190,3 +165,108 @@ class AudioManager:
             return output_path
         else:
             raise RuntimeError(f"Fish Speech API error: {response.status_code} - {response.text}")
+
+    # =========================================================================
+    # Fish Speech Reference Management
+    # =========================================================================
+
+    def fish_speech_list_references(self) -> list:
+        """List all Fish Speech voice references"""
+        import requests
+
+        if not self._check_fish_speech():
+            return []
+
+        try:
+            response = requests.get("http://127.0.0.1:7870/v1/references/list", timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except:
+            return []
+
+    def fish_speech_add_reference(self, reference_id: str, audio_path: str, text: str) -> tuple:
+        """
+        Add a new Fish Speech voice reference.
+
+        Args:
+            reference_id: Unique ID for the voice reference
+            audio_path: Path to the audio file
+            text: Transcription of what is said in the audio (required!)
+
+        Returns:
+            (success: bool, message: str)
+        """
+        import requests
+
+        if not self._check_fish_speech():
+            return False, "Fish Speech server not available"
+
+        if not text or not text.strip():
+            return False, "Le texte de transcription est obligatoire pour Fish Speech"
+
+        # Check if reference already exists
+        existing = self.fish_speech_list_references()
+        if reference_id in existing:
+            return False, f"La référence '{reference_id}' existe déjà"
+
+        try:
+            with open(audio_path, "rb") as f:
+                audio_data = f.read()
+
+            files = {
+                "audio": (os.path.basename(audio_path), audio_data, "audio/wav")
+            }
+            data = {
+                "id": reference_id,
+                "text": text.strip()
+            }
+
+            response = requests.post(
+                "http://127.0.0.1:7870/v1/references/add",
+                files=files,
+                data=data,
+                timeout=60
+            )
+
+            if response.status_code in [200, 201]:
+                return True, f"Référence '{reference_id}' ajoutée avec succès"
+            else:
+                return False, f"Erreur: {response.text}"
+
+        except FileNotFoundError:
+            return False, f"Fichier audio non trouvé: {audio_path}"
+        except Exception as e:
+            return False, f"Erreur: {str(e)}"
+
+    def fish_speech_delete_reference(self, reference_id: str) -> tuple:
+        """
+        Delete a Fish Speech voice reference.
+
+        Returns:
+            (success: bool, message: str)
+        """
+        import requests
+
+        if not self._check_fish_speech():
+            return False, "Fish Speech server not available"
+
+        try:
+            response = requests.delete(
+                "http://127.0.0.1:7870/v1/references/delete",
+                json={"reference_id": reference_id},
+                timeout=10
+            )
+
+            if response.status_code in [200, 204]:
+                return True, f"Référence '{reference_id}' supprimée"
+            else:
+                return False, f"Erreur: {response.text}"
+
+        except Exception as e:
+            return False, f"Erreur: {str(e)}"
+
+    def fish_speech_reference_exists(self, reference_id: str) -> bool:
+        """Check if a reference exists"""
+        return reference_id in self.fish_speech_list_references()
+

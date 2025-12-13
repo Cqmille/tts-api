@@ -14,9 +14,10 @@ VOICES_DIR = DATA_DIR / "voices"
 OUTPUTS_DIR = DATA_DIR / "outputs"
 TEMP_DIR = DATA_DIR / "temp"
 TEMP_DIALOGUE_DIR = TEMP_DIR / "dialogue"
+FISH_PRESETS_DIR = DATA_DIR / "fish_presets"
 
 # Créer les dossiers s'ils n'existent pas
-for directory in [DATA_DIR, VOICES_DIR, OUTPUTS_DIR, TEMP_DIR, TEMP_DIALOGUE_DIR]:
+for directory in [DATA_DIR, VOICES_DIR, OUTPUTS_DIR, TEMP_DIR, TEMP_DIALOGUE_DIR, FISH_PRESETS_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # Échantillons de voix (noms de fichiers dans data/voices/)

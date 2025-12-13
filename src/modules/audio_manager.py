@@ -6,7 +6,7 @@ import os
 # Add parent path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from config.settings import TTS_CONFIG
+from config.settings import TTS_CONFIG, FISH_PRESETS_DIR, VOICES_DIR
 
 
 class AudioManager:
@@ -269,4 +269,86 @@ class AudioManager:
     def fish_speech_reference_exists(self, reference_id: str) -> bool:
         """Check if a reference exists"""
         return reference_id in self.fish_speech_list_references()
+
+    def fish_speech_load_presets(self) -> dict:
+        """
+        Load Fish Speech presets from data/fish_presets/ folder.
+        Each preset is a .txt file with the transcription.
+        The corresponding audio must be in data/voices/ with the same name.
+
+        Returns:
+            dict with {preset_name: {"loaded": bool, "message": str}}
+        """
+        results = {}
+
+        if not self._check_fish_speech():
+            return {"_error": "Fish Speech server not available"}
+
+        # Get existing references
+        existing_refs = self.fish_speech_list_references()
+
+        # Scan presets folder
+        preset_dir = FISH_PRESETS_DIR
+        if not preset_dir.exists():
+            return {}
+
+        for txt_file in preset_dir.glob("*.txt"):
+            preset_name = txt_file.stem
+            audio_file = VOICES_DIR / f"{preset_name}.wav"
+
+            # Skip if already loaded
+            if preset_name in existing_refs:
+                results[preset_name] = {"loaded": True, "message": "Déjà chargé"}
+                continue
+
+            # Check if audio file exists
+            if not audio_file.exists():
+                results[preset_name] = {"loaded": False, "message": f"Audio non trouvé: {audio_file}"}
+                continue
+
+            # Read transcription
+            try:
+                with open(txt_file, "r", encoding="utf-8") as f:
+                    transcription = f.read().strip()
+
+                if not transcription:
+                    results[preset_name] = {"loaded": False, "message": "Transcription vide"}
+                    continue
+
+                # Add reference
+                success, message = self.fish_speech_add_reference(preset_name, str(audio_file), transcription)
+                results[preset_name] = {"loaded": success, "message": message}
+
+            except Exception as e:
+                results[preset_name] = {"loaded": False, "message": str(e)}
+
+        return results
+
+    def init_fish_speech_if_available(self) -> bool:
+        """
+        Initialize Fish Speech as default engine if available and load presets.
+
+        Returns:
+            True if Fish Speech is now the default engine
+        """
+        # Reset cache
+        self._fish_speech_available = None
+
+        if self._check_fish_speech():
+            print("🐟 Fish Speech detected, loading presets...")
+
+            # Load presets
+            results = self.fish_speech_load_presets()
+            for name, info in results.items():
+                if name != "_error":
+                    status = "✅" if info["loaded"] else "⚠️"
+                    print(f"   {status} {name}: {info['message']}")
+
+            # Set as default engine
+            self._current_engine = "fish_speech"
+            print("🐟 Fish Speech set as default engine")
+            return True
+        else:
+            print("⚠️ Fish Speech not available, using XTTS v2")
+            return False
 

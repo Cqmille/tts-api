@@ -14,6 +14,9 @@ from modules.ui_components import create_help_popup
 audio_manager = AudioManager()
 sample_manager = SampleManager(str(TEMP_DIALOGUE_DIR))
 
+# Try to initialize Fish Speech as default if available
+_fish_speech_default = audio_manager.init_fish_speech_if_available()
+
 # Variables globales pour les composants dynamiques
 audio_components = []
 
@@ -330,16 +333,18 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
             gr.Markdown("## 🔧 Sélection du Moteur TTS")
 
             with gr.Group(elem_classes=["engine-selector"]):
+                # Default to Fish Speech if available, otherwise XTTS
+                _default_engine = "fish_speech" if _fish_speech_default else "xtts_v2"
                 engine_selector = gr.Radio(
                     choices=[
                         ("XTTS v2 (Coqui) - Voice cloning haute qualité", "xtts_v2"),
                         ("Fish Speech (OpenAudio S1-mini) - Rapide, expressif", "fish_speech")
                     ],
-                    value="xtts_v2",
+                    value=_default_engine,
                     label="🎯 Moteur TTS",
                     info="Choisissez le moteur de synthèse vocale"
                 )
-                engine_status = gr.HTML(value=get_engine_status_html("xtts_v2"))
+                engine_status = gr.HTML(value=get_engine_status_html(_default_engine))
                 fish_status_info = gr.Markdown(value=check_fish_speech_status())
 
             gr.Markdown("---")
@@ -367,8 +372,10 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
 
             # Language selection
             with gr.Row():
+                # Use Fish Speech languages if it's the default engine
+                _default_languages = FISH_SPEECH_LANGUAGES if _fish_speech_default else SUPPORTED_LANGUAGES
                 language_input = gr.Dropdown(
-                    choices=SUPPORTED_LANGUAGES,
+                    choices=_default_languages,
                     value=TTS_CONFIG["default_language"],
                     label="🌍 Langue"
                 )
@@ -385,7 +392,7 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
                 minimum=0.5, maximum=2.0, value=TTS_CONFIG["default_speed"], step=0.1,
                 label="⚡ Vitesse (XTTS uniquement)",
                 info="Vitesse de parole",
-                visible=True
+                visible=not _fish_speech_default  # Hidden if Fish Speech is default
             )
 
             # Fish Speech-specific parameters
@@ -393,14 +400,14 @@ with gr.Blocks(title="TTS Ultra Pro", theme=gr.themes.Soft(), css="""
                 minimum=0.1, maximum=1.0, value=0.7, step=0.05,
                 label="🎲 Top P (Fish Speech)",
                 info="Nucleus sampling - diversité des choix",
-                visible=False
+                visible=_fish_speech_default  # Visible if Fish Speech is default
             )
 
             repetition_penalty = gr.Slider(
                 minimum=1.0, maximum=2.0, value=1.2, step=0.1,
                 label="🔄 Pénalité répétition (Fish Speech)",
                 info="Évite les répétitions dans la génération",
-                visible=False
+                visible=_fish_speech_default  # Visible if Fish Speech is default
             )
 
             # Buttons
